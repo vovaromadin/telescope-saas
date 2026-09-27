@@ -1,0 +1,55 @@
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from typing import Optional
+
+from sqlalchemy.orm import Session
+
+from app.config import get_settings
+from app.models import CommunityResult, SearchRun, SearchStatus
+from app.scoring import max_referral_link, referral_link
+from app.services.discovery import TelegramDiscovery
+
+
+async def execute_search(db: Session, run: SearchRun, referral_prefix: str, limit: Optional[int] = None) -> None:
+    settings = get_settings()
+    run.status = SearchStatus.running
+    db.commit()
+    try:
+        communities = await TelegramDiscovery(settings).search(run.query, min(limit or settings.search_result_limit, settings.search_result_limit))
+        for item in communities:
+            db.add(
+                CommunityResult(
+                    search_id=run.id,
+                    telegram_id=item.telegram_id,
+                    kind=item.kind,
+                    title=item.title,
+                    username=item.username,
+                    url=item.url,
+                    description=item.description,
+                    public_contacts=json.dumps(item.public_contacts, ensure_ascii=False),
+                    subscribers=item.subscribers,
+                    messages_scanned=item.messages_scanned,
+                    messages_30d=item.messages_30d,
+                    avg_views=item.avg_views,
+                    relevance_score=item.relevance_score,
+                    activity_score=item.activity_score,
+                    audience_score=item.audience_score,
+                    total_score=item.total_score,
+                    matched_snippets=json.dumps(item.snippets, ensure_ascii=False),
+                    referral_url=referral_link(settings.referral_bot_username, referral_prefix, item.username),
+                    max_referral_url=max_referral_link(settings.max_bot_username, referral_prefix, item.username),
+                )
+            )
+        run.result_count = len(communities)
+        run.status = SearchStatus.completed
+        run.completed_at = datetime.now(timezone.utc)
+        if not settings.telegram_ready:
+            run.error = "Telegram credentials are not configured; search completed with no live results."
+        db.commit()
+    except Exception as exc:
+        run.status = SearchStatus.failed
+        run.error = str(exc)[:1000]
+        run.completed_at = datetime.now(timezone.utc)
+        db.commit()
