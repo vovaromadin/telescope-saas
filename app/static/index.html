@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{APP_NAME}} — поиск Telegram-сообществ</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <div class="brand"><span class="mark">T</span><div><b>{{APP_NAME}}</b><small>community intelligence</small></div></div>
+    <div class="privacy">Только публичные сообщества</div>
+  </header>
+  <main>
+    <aside>
+      <label>Ключ API<input id="apiKey" type="password" placeholder="ADMIN_API_KEY"></label>
+      <button id="connect">Подключиться</button>
+      <div id="meta" class="meta"></div>
+      <h3>Проекты</h3>
+      <div id="projects"></div>
+      <form id="projectForm">
+        <input id="projectName" required minlength="2" placeholder="Новый проект">
+        <button>Создать</button>
+      </form>
+    </aside>
+    <section>
+      <div class="hero">
+        <p class="eyebrow">ПОИСК И АНАЛИТИКА</p>
+        <h1>Найдите сообщества,<br>где уже есть ваша аудитория</h1>
+        <p>Telegram-поиск по публичным каналам и группам. Без сбора участников и холодных личных сообщений.</p>
+      </div>
+      <form id="searchForm" class="searchbar">
+        <input id="query" required minlength="2" placeholder="Например: прогнозы на футбол">
+        <button id="searchButton">Найти</button>
+      </form>
+      <div id="status"></div>
+      <div class="toolbar" hidden id="toolbar">
+        <span id="count"></span>
+        <div><a id="csv">CSV</a><a id="json">JSON</a></div>
+      </div>
+      <div id="results" class="results"></div>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
+
