@@ -171,12 +171,21 @@ class WebDiscovery:
         query: str,
         cap: int,
     ) -> list[str]:
+        compact = " ".join(query_terms(query)[:8]) or query
         search_queries = [
-            f'site:t.me/s "{query}"',
-            f'site:tgstat.ru/channel "{query}" Telegram',
-            f'"t.me/" "{query}" "Telegram"',
-            f'"телеграм канал" "{query}"',
+            f"site:t.me/s {compact}",
+            f"site:t.me {compact}",
+            f"site:tgstat.ru/channel {compact}",
+            f"Telegram {compact} t.me",
+            f"телеграм канал {compact}",
         ]
+        folded = compact.casefold()
+        if any(term in folded for term in ("ставк", "прогноз", "букмек", "bet", "football", "футбол")):
+            search_queries.extend([
+                f"site:tgstat.ru/gambling {compact}",
+                f"site:t.me/s ставки прогнозы спорт футбол",
+                f"site:tgstat.ru/channel ставки прогнозы спорт футбол",
+            ])
         urls: list[str] = []
         for search_query in search_queries:
             encoded = quote_plus(search_query)
