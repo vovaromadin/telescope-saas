@@ -6,6 +6,9 @@ import csv
 import hashlib
 import io
 import json
+
+import qrcode
+import qrcode.image.svg
 from datetime import datetime, timezone
 
 import stripe
@@ -62,6 +65,13 @@ def telegram_display_name(me) -> str:
     if username:
         name = f"{name} (@{username})".strip()
     return name or "Telegram account"
+
+
+def qr_svg(url: str) -> str:
+    image = qrcode.make(url, image_factory=qrcode.image.svg.SvgPathImage, box_size=7, border=2)
+    buffer = io.BytesIO()
+    image.save(buffer)
+    return buffer.getvalue().decode("utf-8")
 
 
 def monthly_used(db: Session, account: Account) -> int:
@@ -240,6 +250,10 @@ async def telegram_qr_start(
     existing = QR_LOGIN_TASKS.pop(account.id, None)
     if existing:
         existing.cancel()
+        try:
+            await existing
+        except asyncio.CancelledError:
+            pass
 
     connection = account_telegram_connection(db, account.id)
     if not connection:
@@ -256,6 +270,7 @@ async def telegram_qr_start(
     return {
         "status": "waiting_qr",
         "login_url": qr.url,
+        "qr_svg": qr_svg(qr.url),
         "expires_at": qr.expires.isoformat(),
     }
 
