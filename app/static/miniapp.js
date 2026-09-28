@@ -1,5 +1,11 @@
 const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
-const state = { initData: tg ? tg.initData : "", projects: [], projectId: null, lastSearchId: null };
+const state = {
+  initData: tg ? tg.initData : "",
+  projects: [],
+  projectId: null,
+  lastSearchId: null,
+  activeView: "overview"
+};
 const $ = (id) => document.getElementById(id);
 
 if (tg) {
@@ -30,7 +36,14 @@ async function api(path, options) {
     error.status = response.status;
     throw error;
   }
+  if (response.status === 204) return null;
   return response.json();
+}
+
+function notify(text) {
+  const status = $("status");
+  if (status) status.textContent = text;
+  if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
 }
 
 async function refreshMe() {
@@ -38,7 +51,7 @@ async function refreshMe() {
   $("planBadge").textContent = me.plan.toUpperCase();
   $("usage").textContent = "Использовано " + me.used + " из " + me.monthly_limit + " поисков в этом месяце";
   if (!me.telegram_ready) {
-    $("status").textContent = "Поисковый Telegram-аккаунт пока не подключён. Интерфейс работает, но живые результаты будут недоступны.";
+    notify("Поисковый Telegram-аккаунт пока не подключён. CRM и планирование работают, живой Radar — после подключения.");
   }
 }
 
@@ -50,9 +63,10 @@ function renderProjects() {
     item.type = "button";
     item.className = "project" + (state.projectId === p.id ? " active" : "");
     item.innerHTML = "<b>" + escapeHtml(p.name) + "</b><small>#" + p.id + "</small>";
-    item.onclick = function() {
+    item.onclick = async function() {
       state.projectId = p.id;
       renderProjects();
+      await refreshCurrentView();
     };
     box.appendChild(item);
   });
@@ -67,6 +81,33 @@ async function refreshProjects() {
   renderProjects();
 }
 
+function setView(name) {
+  state.activeView = name;
+  document.querySelectorAll("[data-view]").forEach(function(section) {
+    section.hidden = section.dataset.view !== name;
+  });
+  document.querySelectorAll("[data-view-button]").forEach(function(button) {
+    button.classList.toggle("active", button.dataset.viewButton === name);
+  });
+  refreshCurrentView();
+}
+
+document.querySelectorAll("[data-view-button]").forEach(function(button) {
+  button.onclick = function() { setView(button.dataset.viewButton); };
+});
+
+async function refreshCurrentView() {
+  if (!state.projectId) return;
+  try {
+    if (state.activeView === "overview") await refreshOverview();
+    if (state.activeView === "leads") await refreshLeads();
+    if (state.activeView === "content") await refreshContent();
+    if (state.activeView === "campaigns") await refreshCampaigns();
+  } catch (error) {
+    notify(error.message);
+  }
+}
+
 $("projectForm").onsubmit = async function(event) {
   event.preventDefault();
   try {
@@ -78,13 +119,27 @@ $("projectForm").onsubmit = async function(event) {
     state.projectId = project.id;
     $("projectName").value = "";
     renderProjects();
+    await refreshCurrentView();
   } catch (error) {
-    $("status").textContent = error.message;
+    notify(error.message);
   }
 };
 
+async function refreshOverview() {
+  const data = await api("/api/app/growth/projects/" + state.projectId + "/overview");
+  $("kpiLeads").textContent = data.leads_total;
+  $("kpiQualified").textContent = data.leads_qualified + " квалифицировано";
+  $("kpiNew").textContent = data.leads_new;
+  $("kpiContent").textContent = data.content_draft;
+  $("kpiScheduled").textContent = data.content_scheduled + " запланировано";
+  $("kpiCampaigns").textContent = data.campaigns_active;
+  $("kpiCommunities").textContent = data.communities_discovered;
+  $("kpiSearches").textContent = data.searches + " поисков";
+  $("kpiWon").textContent = data.leads_won;
+}
+
 function renderResults(rows) {
-  $("results").innerHTML = rows.map(function(r) {
+  $("results").innerHTML = rows.map(function(r, index) {
     const contacts = (r.public_contacts || []).map(function(c) {
       return '<span class="chip">контакт ' + escapeHtml(c) + '</span>';
     }).join("");
@@ -98,9 +153,34 @@ function renderResults(rows) {
       '<div class="chips"><span class="chip">' + Number(r.subscribers || 0).toLocaleString("ru-RU") + ' участников</span>' +
       '<span class="chip">релевантность ' + r.relevance_score + '</span>' +
       '<span class="chip">активность ' + r.activity_score + '</span>' + contacts + '</div>' +
-      '<div class="links">' + links + '</div></div>' +
+      '<div class="result-actions"><button type="button" class="ghost lead-add" data-row="' + index + '">+ CRM</button>' +
+      '<div class="links">' + links + '</div></div></div>' +
       '<div class="score">' + Math.round(r.total_score || 0) + '</div></article>';
   }).join("");
+
+  document.querySelectorAll(".lead-add").forEach(function(button) {
+    button.onclick = async function() {
+      const row = rows[Number(button.dataset.row)];
+      try {
+        await api("/api/app/growth/projects/" + state.projectId + "/leads", {
+          method:"POST",
+          body:JSON.stringify({
+            display_name:row.title || row.username || "Telegram lead",
+            source:"radar",
+            source_url:row.url || "",
+            username:String(row.username || "").replace(/^@/, ""),
+            public_contact:(row.public_contacts || [])[0] || "",
+            intent_score:Math.max(0, Math.min(100, Number(row.total_score || 0))),
+            note:"Добавлен из TG Radar"
+          })
+        });
+        button.textContent = "В CRM ✓";
+        button.disabled = true;
+      } catch (error) {
+        notify(error.message);
+      }
+    };
+  });
 }
 
 async function pollSearch(searchId) {
@@ -114,20 +194,20 @@ async function pollSearch(searchId) {
   renderResults(rows);
   $("count").textContent = "Найдено: " + rows.length;
   $("toolbar").hidden = false;
-  $("status").textContent = run.error || "Поиск завершён";
+  notify(run.error || "Поиск завершён");
 }
 
 $("searchForm").onsubmit = async function(event) {
   event.preventDefault();
   if (!state.projectId) {
-    $("status").textContent = "Сначала создай проект.";
+    notify("Сначала создай проект.");
     return;
   }
   const button = $("searchButton");
   button.disabled = true;
   $("toolbar").hidden = true;
   $("results").innerHTML = "";
-  $("status").textContent = "Ищу публичные сообщества и считаю рейтинг…";
+  notify("Ищу публичные сообщества и считаю рейтинг…");
   try {
     const run = await api("/api/app/projects/" + state.projectId + "/searches", {
       method:"POST",
@@ -135,9 +215,9 @@ $("searchForm").onsubmit = async function(event) {
     });
     state.lastSearchId = run.id;
     await pollSearch(run.id);
-    await refreshMe();
+    await Promise.all([refreshMe(), refreshOverview()]);
   } catch (error) {
-    $("status").textContent = error.status === 402 ? "Лимит тарифа исчерпан. Выбери Pro или Team ниже." : error.message;
+    notify(error.status === 402 ? "Лимит тарифа исчерпан. Выбери Pro или Team." : error.message);
   } finally {
     button.disabled = false;
   }
@@ -151,19 +231,118 @@ async function download(format) {
   if (!response.ok) return;
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
-  if (tg && tg.openLink) {
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "tg-market-radar-search-" + state.lastSearchId + "." + format;
-    a.click();
-  } else {
-    window.open(url, "_blank");
-  }
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "tg-growth-radar-" + state.lastSearchId + "." + format;
+  a.click();
   setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
 }
 
 $("csv").onclick = function(){ download("csv"); };
 $("json").onclick = function(){ download("json"); };
+
+function statusSelect(kind, id, value, values) {
+  return '<select class="status-select" data-kind="' + kind + '" data-id="' + id + '">' +
+    values.map(function(item) {
+      return '<option value="' + item + '"' + (item === value ? " selected" : "") + '>' + item + '</option>';
+    }).join("") + '</select>';
+}
+
+async function refreshLeads() {
+  const rows = await api("/api/app/growth/projects/" + state.projectId + "/leads");
+  $("leadList").innerHTML = rows.length ? rows.map(function(row) {
+    return '<article class="item-card"><div><div class="item-title">' + escapeHtml(row.display_name) + '</div>' +
+      '<div class="meta">' + escapeHtml(row.public_contact || row.username || row.source) + '</div>' +
+      '<p>' + escapeHtml(row.note || "Без заметки") + '</p></div>' +
+      '<div class="item-side"><b>' + Math.round(row.intent_score) + '</b>' +
+      statusSelect("lead", row.id, row.status, ["new","qualified","contacted","won","lost","snoozed"]) + '</div></article>';
+  }).join("") : '<div class="empty">Лидов пока нет. Добавь вручную или перенеси результат из Radar.</div>';
+  bindStatusSelects();
+}
+
+$("leadForm").onsubmit = async function(event) {
+  event.preventDefault();
+  if (!state.projectId) return;
+  await api("/api/app/growth/projects/" + state.projectId + "/leads", {
+    method:"POST",
+    body:JSON.stringify({
+      display_name:$("leadName").value.trim(),
+      public_contact:$("leadContact").value.trim(),
+      intent_score:Number($("leadScore").value || 0),
+      note:$("leadNote").value.trim(),
+      source:"manual"
+    })
+  });
+  event.target.reset();
+  $("leadScore").value = "50";
+  await Promise.all([refreshLeads(), refreshOverview()]);
+};
+
+async function refreshContent() {
+  const rows = await api("/api/app/growth/projects/" + state.projectId + "/content");
+  $("contentList").innerHTML = rows.length ? rows.map(function(row) {
+    return '<article class="item-card"><div><div class="item-title">' + escapeHtml(row.title) + '</div>' +
+      '<div class="meta">' + escapeHtml(row.format) + '</div><p>' + escapeHtml(row.body || "Пустой черновик") + '</p></div>' +
+      '<div class="item-side">' + statusSelect("content", row.id, row.status, ["draft","review","scheduled","published"]) + '</div></article>';
+  }).join("") : '<div class="empty">Контент-план пуст.</div>';
+  bindStatusSelects();
+}
+
+$("contentForm").onsubmit = async function(event) {
+  event.preventDefault();
+  await api("/api/app/growth/projects/" + state.projectId + "/content", {
+    method:"POST",
+    body:JSON.stringify({
+      title:$("contentTitle").value.trim(),
+      body:$("contentBody").value.trim(),
+      format:$("contentFormat").value
+    })
+  });
+  event.target.reset();
+  await Promise.all([refreshContent(), refreshOverview()]);
+};
+
+async function refreshCampaigns() {
+  const rows = await api("/api/app/growth/projects/" + state.projectId + "/campaigns");
+  $("campaignList").innerHTML = rows.length ? rows.map(function(row) {
+    return '<article class="item-card"><div><div class="item-title">' + escapeHtml(row.name) + '</div>' +
+      '<div class="meta">' + escapeHtml(row.channel) + (row.budget_daily ? " · " + row.budget_daily + "/день" : "") + '</div>' +
+      '<p>' + escapeHtml(row.goal || "Цель не указана") + '</p></div>' +
+      '<div class="item-side">' + statusSelect("campaign", row.id, row.status, ["draft","active","paused","completed"]) + '</div></article>';
+  }).join("") : '<div class="empty">Кампаний пока нет.</div>';
+  bindStatusSelects();
+}
+
+$("campaignForm").onsubmit = async function(event) {
+  event.preventDefault();
+  await api("/api/app/growth/projects/" + state.projectId + "/campaigns", {
+    method:"POST",
+    body:JSON.stringify({
+      name:$("campaignName").value.trim(),
+      goal:$("campaignGoal").value.trim(),
+      channel:$("campaignChannel").value,
+      budget_daily:Number($("campaignBudget").value || 0)
+    })
+  });
+  event.target.reset();
+  $("campaignBudget").value = "0";
+  await Promise.all([refreshCampaigns(), refreshOverview()]);
+};
+
+function bindStatusSelects() {
+  document.querySelectorAll(".status-select").forEach(function(select) {
+    select.onchange = async function() {
+      const kind = select.dataset.kind;
+      const id = select.dataset.id;
+      const path = kind === "lead" ? "/leads/" : kind === "content" ? "/content/" : "/campaigns/";
+      await api("/api/app/growth" + path + id, {
+        method:"PATCH",
+        body:JSON.stringify({status:select.value})
+      });
+      await refreshOverview();
+    };
+  });
+}
 
 document.querySelectorAll("[data-plan]").forEach(function(button) {
   button.onclick = async function() {
@@ -172,7 +351,7 @@ document.querySelectorAll("[data-plan]").forEach(function(button) {
       if (tg && tg.openLink) tg.openLink(result.url);
       else window.location.href = result.url;
     } catch (error) {
-      $("status").textContent = error.message;
+      notify(error.message);
     }
   };
 });
@@ -180,11 +359,12 @@ document.querySelectorAll("[data-plan]").forEach(function(button) {
 async function boot() {
   if (!state.initData) {
     $("authError").hidden = false;
-    $("authError").textContent = "Открой TG Market Radar из Telegram-бота — браузерная версия не получает Telegram-авторизацию.";
+    $("authError").textContent = "Открой TG Growth OS из Telegram-бота — браузерная версия не получает Telegram-авторизацию.";
     return;
   }
   try {
     await Promise.all([refreshMe(), refreshProjects()]);
+    if (state.projectId) await refreshOverview();
   } catch (error) {
     $("authError").hidden = false;
     $("authError").textContent = error.message;
