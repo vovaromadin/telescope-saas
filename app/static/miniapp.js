@@ -53,19 +53,44 @@ async function refreshMe() {
   $("planBadge").textContent = me.plan.toUpperCase();
   $("usage").textContent = "Использовано " + me.used + " из " + me.monthly_limit + " поисков в этом месяце";
   state.telegramConnected = Boolean(me.telegram_ready);
+}
 
+async function refreshRadarSources() {
   const sourceBadge = $("radarSourceBadge");
   const sourceStatus = $("radarSourceStatus");
-  if (sourceBadge && sourceStatus) {
-    if (me.telemetr_ready) {
-      sourceBadge.textContent = "TELEMETR + WEB";
-      sourceBadge.classList.add("connected");
-      sourceStatus.textContent = "Основной поиск: Telemetr API. Публичный web-поиск используется как дополнительный источник.";
-    } else {
-      sourceBadge.textContent = "PUBLIC WEB";
-      sourceBadge.classList.remove("connected");
-      sourceStatus.textContent = "Radar уже работает через публичный web-поиск. Подключение Telemetr расширит покрытие и качество выдачи.";
+  if (!sourceBadge || !sourceStatus) return;
+
+  try {
+    const info = await api("/api/app/radar/status");
+    const active = ["WEB"];
+    const details = [];
+
+    if (info.tgstat_ok) {
+      active.unshift("TGSTAT");
+      details.push("TGStat API отвечает");
+    } else if (info.tgstat_configured) {
+      details.push("TGStat: ключ есть, но тариф/доступ нужно проверить");
     }
+
+    if (info.telemetr_ok) {
+      active.unshift("TELEMETR");
+      details.push("Telemetr API отвечает");
+    } else if (info.telemetr_configured) {
+      if (info.telemetr_status === "forbidden") details.push("Telemetr: ключ есть, каталог ограничен тарифом");
+      else if (info.telemetr_status === "rate_limited") details.push("Telemetr: исчерпан лимит");
+      else if (info.telemetr_status === "invalid_key") details.push("Telemetr: ключ не принят");
+      else details.push("Telemetr: дополнительный источник сейчас недоступен");
+    }
+
+    sourceBadge.textContent = active.join(" + ");
+    sourceBadge.classList.toggle("connected", active.length > 1);
+    sourceStatus.textContent = details.length
+      ? details.join(". ") + ". Public web остаётся резервным источником."
+      : "Radar работает через публичный web-поиск. API-источники можно подключить дополнительно.";
+  } catch (error) {
+    sourceBadge.textContent = "WEB";
+    sourceBadge.classList.remove("connected");
+    sourceStatus.textContent = "Public web активен. Диагностика дополнительных источников временно недоступна.";
   }
 }
 
@@ -105,7 +130,7 @@ function setView(name) {
     button.classList.toggle("active", active);
     if (active) button.scrollIntoView({behavior:"smooth", block:"nearest", inline:"center"});
   });
-  if (name === "radar") refreshTelegramConnection();
+  if (name === "radar") { refreshTelegramConnection(); refreshRadarSources(); }
   refreshCurrentView();
 }
 
@@ -495,7 +520,7 @@ async function boot() {
     return;
   }
   try {
-    await Promise.all([refreshMe(), refreshProjects(), refreshTelegramConnection()]);
+    await Promise.all([refreshMe(), refreshProjects(), refreshTelegramConnection(), refreshRadarSources()]);
     if (state.projectId) await refreshOverview();
   } catch (error) {
     $("authError").hidden = false;
