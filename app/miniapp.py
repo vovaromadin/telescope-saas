@@ -205,6 +205,7 @@ async def radar_status(
         "telemetr_ok": False,
         "telemetr_status": "not_configured",
         "telemetr_limits": None,
+        "search_t_me": True,
         "public_web": True,
     }
 
