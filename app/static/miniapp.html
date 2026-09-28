@@ -84,6 +84,31 @@
     </section>
 
     <section data-view="radar" hidden>
+      <section class="card connection-card">
+        <div class="section-head">
+          <div>
+            <h2>Telegram-аккаунт для Radar</h2>
+            <p>Нужен только для поиска публичных каналов и групп. Списки участников и личные переписки не собираются.</p>
+          </div>
+          <span id="tgConnectionBadge" class="connection-badge">...</span>
+        </div>
+        <div id="tgConnectionStatus" class="connection-status">Проверяю подключение…</div>
+        <form id="tgPhoneForm" class="row-form connection-form">
+          <input id="tgPhone" type="tel" autocomplete="tel" placeholder="+79991234567" required>
+          <button type="submit">Получить код</button>
+        </form>
+        <form id="tgCodeForm" class="row-form connection-form" hidden>
+          <input id="tgCode" inputmode="numeric" autocomplete="one-time-code" placeholder="Код из Telegram" required>
+          <button type="submit">Подтвердить</button>
+        </form>
+        <form id="tgPasswordForm" class="row-form connection-form" hidden>
+          <input id="tgPassword" type="password" autocomplete="current-password" placeholder="Пароль 2FA" required>
+          <button type="submit">Подключить</button>
+        </form>
+        <button id="tgDisconnect" type="button" class="ghost" hidden>Отключить аккаунт</button>
+        <p class="connection-note">Код и пароль не сохраняются. Авторизованная сессия хранится в Neon в зашифрованном виде.</p>
+      </section>
+
       <section class="card">
         <div class="section-head">
           <div>
