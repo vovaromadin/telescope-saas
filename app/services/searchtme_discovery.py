@@ -68,7 +68,18 @@ def parse_card(anchor, query: str) -> WebCommunity | None:
     )
     subscribers = 0
     if count_matches:
-        subscribers = max(parse_human_count(m.group(0)) for m in count_matches)
+        candidates = []
+        for match in count_matches:
+            value = parse_human_count(match.group(0))
+            suffix = (match.group(2) or "").strip()
+            # Ignore phone numbers, timestamps and other large numbers from descriptions.
+            # Audience counts without a suffix above 200M are not credible Telegram channel counts.
+            if value <= 0:
+                continue
+            if not suffix and value > 200_000_000:
+                continue
+            candidates.append(min(value, 2_000_000_000))
+        subscribers = max(candidates, default=0)
 
     description = remainder
     scores = score_community(
