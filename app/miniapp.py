@@ -185,6 +185,7 @@ def me(account: Account = Depends(current_account), db: Session = Depends(get_db
         "remaining": max(0, limit - used),
         "telegram_ready": connected or settings.telegram_ready,
         "telegram_api_ready": bool(settings.tg_api_id and settings.tg_api_hash),
+        "telemetr_ready": bool(settings.telemetr_api_key),
     }
 
 
