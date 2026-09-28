@@ -103,3 +103,10 @@ footer{text-align:center;color:var(--tg-theme-hint-color,#6b7280);font-size:11px
 
 .qr-code{display:grid;place-items:center;margin:12px 0;padding:12px;border-radius:16px;background:#fff}
 .qr-code svg{width:min(260px,100%);height:auto;display:block}
+
+.advanced-source{padding:0;overflow:hidden}
+.advanced-source>summary{cursor:pointer;list-style:none;padding:14px 15px;font-weight:800;color:var(--tg-theme-hint-color,#6b7280)}
+.advanced-source>summary::-webkit-details-marker{display:none}
+.advanced-source>summary::after{content:"+";float:right;font-size:18px;line-height:1}
+.advanced-source[open]>summary::after{content:"–"}
+.advanced-source-body{padding:0 15px 15px}
