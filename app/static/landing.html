@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{APP_NAME}} — поиск Telegram-аудитории</title>
+  <style>
+    body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#0b1020;color:#f8fafc}
+    .wrap{max-width:980px;margin:0 auto;padding:72px 22px}
+    .tag{font-size:12px;font-weight:800;letter-spacing:.14em;color:#60a5fa}
+    h1{font-size:clamp(44px,8vw,84px);line-height:.95;margin:14px 0 20px}
+    .lead{font-size:20px;line-height:1.5;color:#cbd5e1;max-width:760px}
+    .cta{display:inline-block;margin-top:28px;padding:14px 20px;border-radius:14px;background:#3b82f6;color:white;text-decoration:none;font-weight:800}
+    .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:58px}
+    .card{background:#121a2d;border:1px solid #22304d;border-radius:18px;padding:20px}
+    .card b{font-size:18px}.card p{color:#94a3b8;line-height:1.5}
+    .prices{margin-top:46px;display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+    .price{background:#111827;border-radius:18px;padding:20px}.price strong{font-size:26px;display:block}.price span{color:#94a3b8}
+    footer{margin-top:60px;color:#64748b;font-size:13px}
+    @media(max-width:700px){.wrap{padding-top:42px}.grid,.prices{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <div class="tag">TELEGRAM AUDIENCE INTELLIGENCE</div>
+    <h1>{{APP_NAME}}</h1>
+    <p class="lead">Поиск публичных Telegram-каналов и групп по любой нише. Релевантность, активность, размер аудитории, открытые рекламные контакты и экспорт — внутри Telegram.</p>
+    <a class="cta" href="https://t.me/{{BOT_USERNAME}}" target="_blank" rel="noopener">Открыть в Telegram</a>
+
+    <section class="grid">
+      <div class="card"><b>Поиск по нише</b><p>Введи запрос — от автосервисов до инвестиций — и получи список релевантных публичных сообществ.</p></div>
+      <div class="card"><b>Скоринг 0–100</b><p>Система оценивает релевантность, активность и потенциальный размер аудитории.</p></div>
+      <div class="card"><b>Рекламные контакты</b><p>Собираются только контакты, которые сами сообщества явно публикуют для рекламы или сотрудничества.</p></div>
+    </section>
+
+    <section class="prices">
+      <div class="price"><strong>Free</strong><span>5 поисков / месяц</span></div>
+      <div class="price"><strong>Pro</strong><span>100 поисков / месяц</span></div>
+      <div class="price"><strong>Team</strong><span>500 поисков / месяц</span></div>
+    </section>
+
+    <footer>TeleScope работает с публичными данными сообществ и не создаёт базы личных пользователей для холодных рассылок.</footer>
+  </main>
+</body>
+</html>
