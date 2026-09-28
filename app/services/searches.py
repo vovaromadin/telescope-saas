@@ -12,12 +12,13 @@ from app.scoring import max_referral_link, referral_link
 from app.services.discovery import TelegramDiscovery
 
 
-async def execute_search(db: Session, run: SearchRun, referral_prefix: str, limit: Optional[int] = None) -> None:
+async def execute_search(db: Session, run: SearchRun, referral_prefix: str, limit: Optional[int] = None, telegram_session: Optional[str] = None) -> None:
     settings = get_settings()
+    search_settings = settings.model_copy(update={"tg_session": telegram_session}) if telegram_session else settings
     run.status = SearchStatus.running
     db.commit()
     try:
-        communities = await TelegramDiscovery(settings).search(run.query, min(limit or settings.search_result_limit, settings.search_result_limit))
+        communities = await TelegramDiscovery(search_settings).search(run.query, min(limit or search_settings.search_result_limit, search_settings.search_result_limit))
         for item in communities:
             db.add(
                 CommunityResult(
@@ -45,8 +46,8 @@ async def execute_search(db: Session, run: SearchRun, referral_prefix: str, limi
         run.result_count = len(communities)
         run.status = SearchStatus.completed
         run.completed_at = datetime.now(timezone.utc)
-        if not settings.telegram_ready:
-            run.error = "Telegram credentials are not configured; search completed with no live results."
+        if not search_settings.telegram_ready:
+            run.error = "Telegram search account is not connected; credential-free web discovery was used."
         db.commit()
     except Exception as exc:
         run.status = SearchStatus.failed
