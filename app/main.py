@@ -69,8 +69,14 @@ async def startup() -> None:
             print(f"Telegram webhook configuration failed: {type(exc).__name__}", flush=True)
 
     try:
-        radar_check = await radar_health()
-        print("RADAR_SELF_CHECK=" + json.dumps(radar_check, ensure_ascii=False), flush=True)
+        rows = await SearchTMeDiscovery().search("ставки футбол", 10)
+        print(
+            "RADAR_SELF_CHECK=" + json.dumps(
+                {"query": "ставки футбол", "search_t_me": {"count": len(rows), "error": None}},
+                ensure_ascii=False,
+            ),
+            flush=True,
+        )
     except Exception as exc:
         print(f"RADAR_SELF_CHECK_FAILED={type(exc).__name__}:{str(exc)[:180]}", flush=True)
 
