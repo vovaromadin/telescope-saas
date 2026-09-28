@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models import CommunityResult, SearchRun, SearchStatus
 from app.scoring import max_referral_link, referral_link
-from app.services.discovery import TelegramDiscovery
+from app.services.hybrid_discovery import HybridDiscovery
 
 
 async def execute_search(db: Session, run: SearchRun, referral_prefix: str, limit: Optional[int] = None, telegram_session: Optional[str] = None) -> None:
@@ -18,7 +18,10 @@ async def execute_search(db: Session, run: SearchRun, referral_prefix: str, limi
     run.status = SearchStatus.running
     db.commit()
     try:
-        communities = await TelegramDiscovery(search_settings).search(run.query, min(limit or search_settings.search_result_limit, search_settings.search_result_limit))
+        communities, sources = await HybridDiscovery(search_settings).search(
+            run.query,
+            min(limit or search_settings.search_result_limit, search_settings.search_result_limit),
+        )
         for item in communities:
             db.add(
                 CommunityResult(
@@ -46,8 +49,10 @@ async def execute_search(db: Session, run: SearchRun, referral_prefix: str, limi
         run.result_count = len(communities)
         run.status = SearchStatus.completed
         run.completed_at = datetime.now(timezone.utc)
-        if not search_settings.telegram_ready:
-            run.error = "Telegram search account is not connected; credential-free web discovery was used."
+        if sources:
+            run.error = "Источники Radar: " + ", ".join(sources)
+        else:
+            run.error = "Источники Radar не вернули результатов."
         db.commit()
     except Exception as exc:
         run.status = SearchStatus.failed
