@@ -154,7 +154,7 @@ async function download(format) {
   if (tg && tg.openLink) {
     const a = document.createElement("a");
     a.href = url;
-    a.download = "telescope-search-" + state.lastSearchId + "." + format;
+    a.download = "tg-market-radar-search-" + state.lastSearchId + "." + format;
     a.click();
   } else {
     window.open(url, "_blank");
@@ -180,7 +180,7 @@ document.querySelectorAll("[data-plan]").forEach(function(button) {
 async function boot() {
   if (!state.initData) {
     $("authError").hidden = false;
-    $("authError").textContent = "Открой TeleScope из Telegram-бота — браузерная версия не получает Telegram-авторизацию.";
+    $("authError").textContent = "Открой TG Market Radar из Telegram-бота — браузерная версия не получает Telegram-авторизацию.";
     return;
   }
   try {
