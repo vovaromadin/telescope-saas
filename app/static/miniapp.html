@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
-  <title>TG Market Radar</title>
+  <title>TG Growth OS</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
   <link rel="stylesheet" href="/static/miniapp.css">
 </head>
@@ -12,68 +12,166 @@
   <main class="shell">
     <header class="hero">
       <div>
-        <div class="eyebrow">TELEGRAM AUDIENCE INTELLIGENCE</div>
-        <h1>TG Market Radar</h1>
-        <p>Ищи публичные каналы и группы по любым нишам, оценивай активность и находи открытые рекламные контакты.</p>
+        <div class="eyebrow">TELEGRAM GROWTH OPERATING SYSTEM</div>
+        <h1>TG Growth OS</h1>
+        <p>Radar аудитории, CRM, контент и кампании в одном Telegram Mini App.</p>
       </div>
       <div id="planBadge" class="plan">...</div>
     </header>
 
     <section id="authError" class="notice danger" hidden></section>
 
-    <section class="card">
+    <section class="card project-card">
       <div class="section-head">
         <div>
-          <h2>Проекты</h2>
-          <p>Разделяй ниши и клиентов по отдельным проектам.</p>
+          <h2>Рабочее пространство</h2>
+          <p>Каждый проект хранит собственные поиски, лиды, контент и кампании.</p>
         </div>
       </div>
       <form id="projectForm" class="row-form">
-        <input id="projectName" maxlength="160" placeholder="Например: Автосервисы Москва" required>
+        <input id="projectName" maxlength="160" placeholder="Например: BetLineRadar" required>
         <button type="submit">Создать</button>
       </form>
       <div id="projects" class="projects"></div>
     </section>
 
-    <section class="card">
-      <div class="section-head">
-        <div>
-          <h2>Новый поиск</h2>
-          <p id="usage">Загрузка лимитов…</p>
+    <nav class="tabs" aria-label="Разделы">
+      <button class="tab active" data-view-button="overview">Обзор</button>
+      <button class="tab" data-view-button="radar">Radar</button>
+      <button class="tab" data-view-button="leads">CRM</button>
+      <button class="tab" data-view-button="content">Контент</button>
+      <button class="tab" data-view-button="campaigns">Кампании</button>
+    </nav>
+
+    <section data-view="overview">
+      <div class="kpis">
+        <article class="kpi"><span>Лиды</span><b id="kpiLeads">0</b><small id="kpiQualified">0 квалифицировано</small></article>
+        <article class="kpi"><span>Новые</span><b id="kpiNew">0</b><small>ждут обработки</small></article>
+        <article class="kpi"><span>Контент</span><b id="kpiContent">0</b><small id="kpiScheduled">0 запланировано</small></article>
+        <article class="kpi"><span>Кампании</span><b id="kpiCampaigns">0</b><small>активно</small></article>
+        <article class="kpi"><span>Radar</span><b id="kpiCommunities">0</b><small id="kpiSearches">0 поисков</small></article>
+        <article class="kpi accent"><span>Сделки</span><b id="kpiWon">0</b><small>выиграно</small></article>
+      </div>
+
+      <section class="card">
+        <div class="section-head">
+          <div>
+            <h2>Growth-пайплайн</h2>
+            <p>Рабочая последовательность для продвижения проекта.</p>
+          </div>
         </div>
-      </div>
-      <form id="searchForm">
-        <textarea id="query" maxlength="300" rows="3" placeholder="Например: детейлинг Москва, ставки на футбол, продажа недвижимости Дубай" required></textarea>
-        <button id="searchButton" class="primary" type="submit">Найти аудиторию</button>
-      </form>
-      <div id="status" class="status"></div>
-    </section>
-
-    <section id="toolbar" class="toolbar" hidden>
-      <strong id="count">Найдено: 0</strong>
-      <div>
-        <button id="csv" class="ghost" type="button">CSV</button>
-        <button id="json" class="ghost" type="button">JSON</button>
-      </div>
-    </section>
-
-    <section id="results" class="results"></section>
-
-    <section class="card pricing">
-      <div class="section-head">
-        <div>
-          <h2>Тарифы</h2>
-          <p>Начни бесплатно, увеличивай лимит по мере роста.</p>
+        <div class="pipeline">
+          <div><b>1</b><span>Radar</span><small>найти публичные площадки</small></div>
+          <div><b>2</b><span>CRM</span><small>сохранить релевантные лиды</small></div>
+          <div><b>3</b><span>Контент</span><small>подготовить публикации и ответы</small></div>
+          <div><b>4</b><span>Кампании</span><small>запустить и отслеживать</small></div>
         </div>
-      </div>
-      <div class="plans">
-        <div class="price"><b>Free</b><span>5 поисков / мес.</span></div>
-        <button data-plan="pro" class="price action"><b>Pro</b><span>100 поисков / мес.</span></button>
-        <button data-plan="team" class="price action"><b>Team</b><span>500 поисков / мес.</span></button>
-      </div>
+      </section>
+
+      <section class="card pricing">
+        <div class="section-head">
+          <div>
+            <h2>Тарифы</h2>
+            <p id="usage">Загрузка лимитов…</p>
+          </div>
+        </div>
+        <div class="plans">
+          <div class="price"><b>Free</b><span>5 поисков / мес.</span></div>
+          <button data-plan="pro" class="price action"><b>Pro</b><span>100 поисков / мес.</span></button>
+          <button data-plan="team" class="price action"><b>Team</b><span>500 поисков / мес.</span></button>
+        </div>
+      </section>
     </section>
 
-    <footer>Только публичные сообщества и явно опубликованные рекламные контакты.</footer>
+    <section data-view="radar" hidden>
+      <section class="card">
+        <div class="section-head">
+          <div>
+            <h2>Radar аудитории</h2>
+            <p>Поиск только по публичным Telegram-каналам и группам.</p>
+          </div>
+        </div>
+        <form id="searchForm">
+          <textarea id="query" maxlength="300" rows="3" placeholder="Например: детейлинг Москва, ставки на футбол, продажа недвижимости Дубай" required></textarea>
+          <button id="searchButton" class="primary" type="submit">Найти аудиторию</button>
+        </form>
+        <div id="status" class="status"></div>
+      </section>
+
+      <section id="toolbar" class="toolbar" hidden>
+        <strong id="count">Найдено: 0</strong>
+        <div>
+          <button id="csv" class="ghost" type="button">CSV</button>
+          <button id="json" class="ghost" type="button">JSON</button>
+        </div>
+      </section>
+      <section id="results" class="results"></section>
+    </section>
+
+    <section data-view="leads" hidden>
+      <section class="card">
+        <div class="section-head">
+          <div><h2>CRM лидов</h2><p>Добавляй вручную или переноси результат из Radar.</p></div>
+        </div>
+        <form id="leadForm" class="stack">
+          <input id="leadName" maxlength="220" placeholder="Название / контакт" required>
+          <div class="form-grid">
+            <input id="leadContact" maxlength="220" placeholder="@username или публичный контакт">
+            <input id="leadScore" type="number" min="0" max="100" value="50" placeholder="Intent score">
+          </div>
+          <textarea id="leadNote" maxlength="5000" rows="2" placeholder="Заметка"></textarea>
+          <button type="submit">Добавить лид</button>
+        </form>
+      </section>
+      <section id="leadList" class="list"></section>
+    </section>
+
+    <section data-view="content" hidden>
+      <section class="card">
+        <div class="section-head">
+          <div><h2>Контент</h2><p>Очередь постов, ответов, сценариев и материалов кампаний.</p></div>
+        </div>
+        <form id="contentForm" class="stack">
+          <div class="form-grid">
+            <input id="contentTitle" maxlength="220" placeholder="Заголовок" required>
+            <select id="contentFormat">
+              <option value="post">Пост</option>
+              <option value="reply">Ответ</option>
+              <option value="script">Сценарий</option>
+              <option value="offer">Оффер</option>
+            </select>
+          </div>
+          <textarea id="contentBody" maxlength="20000" rows="5" placeholder="Текст материала"></textarea>
+          <button type="submit">Сохранить черновик</button>
+        </form>
+      </section>
+      <section id="contentList" class="list"></section>
+    </section>
+
+    <section data-view="campaigns" hidden>
+      <section class="card">
+        <div class="section-head">
+          <div><h2>Кампании</h2><p>Цели, каналы и статус продвижения по каждому проекту.</p></div>
+        </div>
+        <form id="campaignForm" class="stack">
+          <div class="form-grid">
+            <input id="campaignName" maxlength="220" placeholder="Название кампании" required>
+            <select id="campaignChannel">
+              <option value="telegram">Telegram</option>
+              <option value="content">Контент</option>
+              <option value="partners">Партнёры</option>
+              <option value="ads">Реклама</option>
+            </select>
+          </div>
+          <textarea id="campaignGoal" maxlength="5000" rows="3" placeholder="Цель: например, 100 запусков Mini App"></textarea>
+          <input id="campaignBudget" type="number" min="0" step="1" value="0" placeholder="Дневной бюджет">
+          <button type="submit">Создать кампанию</button>
+        </form>
+      </section>
+      <section id="campaignList" class="list"></section>
+    </section>
+
+    <footer>Публичные сообщества, авторизованные аккаунты и согласованные коммуникации. Без массовых незапрошенных ЛС.</footer>
   </main>
   <script src="/static/miniapp.js"></script>
 </body>
