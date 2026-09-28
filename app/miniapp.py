@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import csv
 import hashlib
@@ -10,9 +11,8 @@ from datetime import datetime, timezone
 import stripe
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
-from pydantic import BaseModel
 from telethon import TelegramClient
-from telethon.errors import FloodWaitError, PasswordHashInvalidError, PhoneCodeExpiredError, PhoneCodeInvalidError, PhoneNumberBannedError, PhoneNumberInvalidError, SessionPasswordNeededError
+from telethon.errors import SessionPasswordNeededError
 from telethon.sessions import StringSession
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import func, select
@@ -29,18 +29,7 @@ from app.services.searches import execute_search
 router = APIRouter(prefix="/api/app", tags=["miniapp"])
 settings = get_settings()
 PLAN_LIMITS = {Plan.free: 5, Plan.pro: 100, Plan.team: 500}
-
-
-class TelegramPhonePayload(BaseModel):
-    phone: str
-
-
-class TelegramCodePayload(BaseModel):
-    code: str
-
-
-class TelegramPasswordPayload(BaseModel):
-    password: str
+QR_LOGIN_TASKS: dict[int, asyncio.Task] = {}
 
 
 def _fernet() -> Fernet:
@@ -203,115 +192,72 @@ def telegram_connection_status(
     }
 
 
-@router.post("/telegram/connect/start")
-async def telegram_connect_start(
-    payload: TelegramPhonePayload,
+async def _finish_qr_login(account_id: int, client: TelegramClient, qr) -> None:
+    try:
+        user = await qr.wait(timeout=90)
+        with SessionLocal() as db:
+            connection = account_telegram_connection(db, account_id)
+            if not connection:
+                connection = TelegramConnection(account_id=account_id)
+                db.add(connection)
+            connection.status = "connected"
+            connection.session_encrypted = encrypt_secret(client.session.save())
+            connection.display_name = telegram_display_name(user)
+            db.commit()
+    except SessionPasswordNeededError:
+        with SessionLocal() as db:
+            connection = account_telegram_connection(db, account_id)
+            if connection:
+                connection.status = "two_factor_required"
+                db.commit()
+    except asyncio.TimeoutError:
+        with SessionLocal() as db:
+            connection = account_telegram_connection(db, account_id)
+            if connection and connection.status == "waiting_qr":
+                connection.status = "expired"
+                db.commit()
+    except Exception:
+        with SessionLocal() as db:
+            connection = account_telegram_connection(db, account_id)
+            if connection:
+                connection.status = "error"
+                db.commit()
+    finally:
+        try:
+            await client.disconnect()
+        finally:
+            QR_LOGIN_TASKS.pop(account_id, None)
+
+
+@router.post("/telegram/qr/start")
+async def telegram_qr_start(
     account: Account = Depends(current_account),
     db: Session = Depends(get_db),
 ) -> dict:
     if not settings.tg_api_id or not settings.tg_api_hash:
         raise HTTPException(503, "TG_API_ID и TG_API_HASH ещё не настроены")
-    phone = payload.phone.strip().replace(" ", "").replace("-", "")
-    if len(phone) < 8:
-        raise HTTPException(400, "Укажи номер в международном формате, например +79991234567")
+
+    existing = QR_LOGIN_TASKS.pop(account.id, None)
+    if existing:
+        existing.cancel()
 
     connection = account_telegram_connection(db, account.id)
     if not connection:
         connection = TelegramConnection(account_id=account.id)
         db.add(connection)
+    connection.status = "waiting_qr"
+    connection.display_name = ""
+    db.commit()
 
     client = TelegramClient(StringSession(), settings.tg_api_id, settings.tg_api_hash)
     await client.connect()
-    try:
-        sent = await client.send_code_request(phone)
-        connection.status = "code_sent"
-        connection.pending_session_encrypted = encrypt_secret(client.session.save())
-        connection.pending_phone_encrypted = encrypt_secret(phone)
-        connection.pending_code_hash_encrypted = encrypt_secret(sent.phone_code_hash)
-        db.commit()
-        return {"status": "code_sent"}
-    except PhoneNumberInvalidError as exc:
-        raise HTTPException(400, "Telegram не принимает этот номер телефона") from exc
-    except PhoneNumberBannedError as exc:
-        raise HTTPException(400, "Этот Telegram-номер заблокирован") from exc
-    except FloodWaitError as exc:
-        raise HTTPException(429, f"Telegram просит подождать {exc.seconds} сек.") from exc
-    finally:
-        await client.disconnect()
-
-
-@router.post("/telegram/connect/code")
-async def telegram_connect_code(
-    payload: TelegramCodePayload,
-    account: Account = Depends(current_account),
-    db: Session = Depends(get_db),
-) -> dict:
-    connection = account_telegram_connection(db, account.id)
-    if not connection or not connection.pending_session_encrypted:
-        raise HTTPException(400, "Сначала запроси код Telegram")
-
-    session_value = decrypt_secret(connection.pending_session_encrypted)
-    phone = decrypt_secret(connection.pending_phone_encrypted)
-    phone_code_hash = decrypt_secret(connection.pending_code_hash_encrypted)
-    code = payload.code.strip().replace(" ", "")
-    client = TelegramClient(StringSession(session_value), settings.tg_api_id, settings.tg_api_hash)
-    await client.connect()
-    try:
-        try:
-            await client.sign_in(phone=phone, code=code, phone_code_hash=phone_code_hash)
-        except SessionPasswordNeededError:
-            connection.status = "password_required"
-            connection.pending_session_encrypted = encrypt_secret(client.session.save())
-            db.commit()
-            return {"status": "password_required", "requires_password": True}
-        me = await client.get_me()
-        connection.status = "connected"
-        connection.session_encrypted = encrypt_secret(client.session.save())
-        connection.pending_session_encrypted = ""
-        connection.pending_phone_encrypted = ""
-        connection.pending_code_hash_encrypted = ""
-        connection.display_name = telegram_display_name(me)
-        db.commit()
-        return {"status": "connected", "display_name": connection.display_name}
-    except PhoneCodeInvalidError as exc:
-        raise HTTPException(400, "Неверный код Telegram") from exc
-    except PhoneCodeExpiredError as exc:
-        raise HTTPException(400, "Код Telegram истёк. Запроси новый") from exc
-    finally:
-        await client.disconnect()
-
-
-@router.post("/telegram/connect/password")
-async def telegram_connect_password(
-    payload: TelegramPasswordPayload,
-    account: Account = Depends(current_account),
-    db: Session = Depends(get_db),
-) -> dict:
-    connection = account_telegram_connection(db, account.id)
-    if not connection or connection.status != "password_required" or not connection.pending_session_encrypted:
-        raise HTTPException(400, "Сначала подтверди код Telegram")
-
-    client = TelegramClient(
-        StringSession(decrypt_secret(connection.pending_session_encrypted)),
-        settings.tg_api_id,
-        settings.tg_api_hash,
-    )
-    await client.connect()
-    try:
-        await client.sign_in(password=payload.password)
-        me = await client.get_me()
-        connection.status = "connected"
-        connection.session_encrypted = encrypt_secret(client.session.save())
-        connection.pending_session_encrypted = ""
-        connection.pending_phone_encrypted = ""
-        connection.pending_code_hash_encrypted = ""
-        connection.display_name = telegram_display_name(me)
-        db.commit()
-        return {"status": "connected", "display_name": connection.display_name}
-    except PasswordHashInvalidError as exc:
-        raise HTTPException(400, "Неверный пароль двухэтапной аутентификации") from exc
-    finally:
-        await client.disconnect()
+    qr = await client.qr_login()
+    QR_LOGIN_TASKS[account.id] = asyncio.create_task(_finish_qr_login(account.id, client, qr))
+    return {
+        "status": "waiting_qr",
+        "login_url": qr.url,
+        "expires_at": qr.expires.isoformat(),
+    }
 
 
 @router.delete("/telegram/connection")
