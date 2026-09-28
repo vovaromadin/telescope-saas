@@ -30,13 +30,35 @@ app.include_router(growth_router)
 PLAN_LIMITS = {Plan.free: 5, Plan.pro: 100, Plan.team: 500}
 
 
+async def configure_telegram_webhook() -> None:
+    if not (settings.tg_bot_token and settings.tg_webhook_secret and settings.public_base_url):
+        return
+    webhook_url = f"{settings.public_base_url.rstrip('/')}/webhooks/telegram/{settings.tg_webhook_secret}"
+    async with httpx.AsyncClient(timeout=15) as client:
+        response = await client.post(
+            f"https://api.telegram.org/bot{settings.tg_bot_token}/setWebhook",
+            json={
+                "url": webhook_url,
+                "secret_token": settings.tg_webhook_secret,
+                "allowed_updates": ["message"],
+                "drop_pending_updates": False,
+            },
+        )
+        response.raise_for_status()
+
+
 @app.on_event("startup")
-def startup() -> None:
+async def startup() -> None:
     Base.metadata.create_all(engine)
     with SessionLocal() as db:
         if not db.scalar(select(Account).limit(1)):
             db.add(Account(name="Default workspace", plan=Plan.free))
             db.commit()
+    try:
+        await configure_telegram_webhook()
+    except httpx.HTTPError:
+        # Keep the app available even if Telegram is temporarily unreachable.
+        pass
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -64,7 +86,7 @@ def mini_app() -> str:
 @app.get("/health")
 def health(db: Session = Depends(get_db)) -> dict:
     db.execute(select(1))
-    return {"status": "ok", "telegram": settings.telegram_ready, "version": app.version}
+    return {"status": "ok", "telegram_radar": settings.telegram_ready, "telegram_bot": bool(settings.tg_bot_token), "version": app.version}
 
 
 def default_account(db: Session) -> Account:
@@ -302,14 +324,14 @@ async def handle_chat_command(
                 markup = {
                     "inline_keyboard": [[
                         {
-                            "text": "🚀 Открыть TG Market Radar",
+                            "text": "🚀 Открыть TG Ракета",
                             "web_app": {"url": f"{settings.public_base_url.rstrip('/')}/app"},
                         }
                     ]]
                 }
             await sender(
                 chat_id,
-                "TG Market Radar ищет публичные Telegram-каналы и группы по любым нишам. "
+                "TG Ракета ищет публичные Telegram-каналы и группы по любым нишам. "
                 "Открой приложение кнопкой ниже или используй команды: /projects, /new Название, /search ID запрос, /plan",
                 markup,
             )
@@ -376,13 +398,16 @@ async def handle_chat_command(
             )
             return
 
-        await sender(chat_id, "Неизвестная команда. /start — открыть TG Market Radar", None)
+        await sender(chat_id, "Неизвестная команда. /start — открыть TG Ракета", None)
 
 
 @app.post("/webhooks/telegram/{secret}")
 async def telegram_webhook(secret: str, request: Request):
     if not settings.tg_bot_token or not settings.tg_webhook_secret or secret != settings.tg_webhook_secret:
         raise HTTPException(404)
+    supplied = request.headers.get("x-telegram-bot-api-secret-token", "")
+    if supplied != settings.tg_webhook_secret:
+        raise HTTPException(401, "Invalid Telegram webhook secret")
     update = await request.json()
     message = update.get("message") or {}
     chat_id = int((message.get("chat") or {}).get("id", 0))
@@ -405,7 +430,7 @@ async def max_webhook(request: Request):
     update = await request.json()
     update_type = update.get("update_type")
     if update_type == "bot_started":
-        await max_send(int(update.get("chat_id", 0)), "TG Market Radar готов. /start — команды")
+        await max_send(int(update.get("chat_id", 0)), "TG Ракета готов. /start — команды")
         return {"ok": True}
     if update_type != "message_created":
         return {"ok": True}
