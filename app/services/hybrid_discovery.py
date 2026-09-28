@@ -5,11 +5,12 @@ import asyncio
 from app.config import Settings
 from app.services.discovery import TelegramDiscovery
 from app.services.telemetr_discovery import TelemetrDiscovery
+from app.services.tgstat_discovery import TGStatDiscovery
 from app.services.web_discovery import WebDiscovery, WebCommunity
 
 
 class HybridDiscovery:
-    """Combine Telemetr, public web discovery, and optional Telegram account search."""
+    """Combine TGStat, Telemetr, public web, and optional Telegram account search."""
 
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -21,6 +22,16 @@ class HybridDiscovery:
 
         tasks = []
         labels = []
+
+        if self.settings.tgstat_api_token:
+            tasks.append(
+                TGStatDiscovery(
+                    self.settings.tgstat_api_token,
+                    self.settings.tgstat_country,
+                    self.settings.tgstat_language,
+                ).search(query, limit)
+            )
+            labels.append("TGStat")
 
         if self.settings.telemetr_api_key:
             tasks.append(TelemetrDiscovery(self.settings.telemetr_api_key).search(query, limit))
