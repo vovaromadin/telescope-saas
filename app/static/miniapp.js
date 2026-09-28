@@ -6,7 +6,8 @@ const state = {
   lastSearchId: null,
   activeView: "overview",
   telegramConnected: false,
-  telegramPoll: null
+  telegramPoll: null,
+  crmAddedCount: 0
 };
 const $ = (id) => document.getElementById(id);
 
@@ -334,7 +335,13 @@ function renderResults(rows) {
         });
         button.textContent = "В CRM ✓";
         if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
-        setView("leads");
+        state.crmAddedCount += 1;
+        const crmJump = $("crmJump");
+        const crmJumpCount = $("crmJumpCount");
+        if (crmJump && crmJumpCount) {
+          crmJumpCount.textContent = state.crmAddedCount;
+          crmJump.hidden = false;
+        }
         refreshOverview();
       } catch (error) {
         button.disabled = false;
@@ -418,6 +425,10 @@ async function download(format) {
 
 $("csv").onclick = function(){ download("csv"); };
 $("json").onclick = function(){ download("json"); };
+
+$("crmJump").onclick = function() {
+  setView("leads");
+};
 
 function statusSelect(kind, id, value, values) {
   return '<select class="status-select" data-kind="' + kind + '" data-id="' + id + '">' +
