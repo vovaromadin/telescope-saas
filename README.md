@@ -1,9 +1,15 @@
-# TG Market Radar
+# TG Growth OS
 
-SaaS для поиска и оценки **публичных Telegram-каналов и групп** по произвольным запросам. TG Market Radar не собирает участников, профили авторов сообщений и не отправляет холодные личные сообщения.
+SaaS-комбайн для продвижения проектов в Telegram: **Radar публичных сообществ + CRM лидов + контент-пайплайн + кампании + Mini App**. Система не собирает скрытые профили участников и не предназначена для массовых незапрошенных личных сообщений.
 
 ## Возможности
 
+- рабочие пространства для разных проектов и клиентов;
+- Growth Overview с ключевыми показателями;
+- CRM лидов со статусами и intent score;
+- перенос найденных Radar-результатов в CRM одним действием;
+- очередь контента: посты, ответы, сценарии и офферы;
+- кампании с целями, каналами, бюджетами и статусами;
 - проекты и история поисков;
 - глобальный поиск публичных сообщений через отдельную Telegram MTProto-сессию;
 - строгий фильтр: только публичные каналы и супергруппы с username;
@@ -102,3 +108,18 @@ pytest -q
 ## Дальнейшее усиление
 
 Для высокой нагрузки вынесите `run_search_background` в отдельный worker (Redis + Dramatiq/Celery). Модель данных и статусная машина `queued/running/completed/failed` уже готовы к этому разделению.
+
+
+## Growth OS API (v0.2)
+
+Mini App использует multi-tenant endpoints с Telegram initData:
+
+- `GET /api/app/growth/projects/{id}/overview`
+- `GET/POST /api/app/growth/projects/{id}/leads`
+- `PATCH /api/app/growth/leads/{id}`
+- `GET/POST /api/app/growth/projects/{id}/content`
+- `PATCH /api/app/growth/content/{id}`
+- `GET/POST /api/app/growth/projects/{id}/campaigns`
+- `PATCH /api/app/growth/campaigns/{id}`
+
+Следующие модули: AI-маркетолог, генерация контента, разрешённые публикации в собственные каналы, аналитика конверсий, роли команд и billing для российского рынка.
