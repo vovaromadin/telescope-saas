@@ -1,6 +1,6 @@
 # Third-party notices
 
-TeleScope's credential-free public-community discovery architecture was informed by:
+TG Market Radar's credential-free public-community discovery architecture was informed by:
 
 - **TeleScout** — https://github.com/AEX-X/telescout
 - Copyright © 2026 AEX-X
