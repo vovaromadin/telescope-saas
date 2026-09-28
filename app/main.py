@@ -65,6 +65,12 @@ async def startup() -> None:
         except httpx.HTTPError as exc:
             print(f"Telegram webhook configuration failed: {type(exc).__name__}", flush=True)
 
+    try:
+        radar_check = await radar_health()
+        print("RADAR_SELF_CHECK=" + json.dumps(radar_check, ensure_ascii=False), flush=True)
+    except Exception as exc:
+        print(f"RADAR_SELF_CHECK_FAILED={type(exc).__name__}:{str(exc)[:180]}", flush=True)
+
 
 @app.get("/", response_class=HTMLResponse)
 def landing() -> str:
