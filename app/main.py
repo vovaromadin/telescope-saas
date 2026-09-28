@@ -98,9 +98,16 @@ def dashboard() -> str:
 
 
 @app.get("/app", response_class=HTMLResponse)
-def mini_app() -> str:
+def mini_app() -> HTMLResponse:
     with open("app/static/miniapp.html", encoding="utf-8") as handle:
-        return handle.read()
+        return HTMLResponse(
+            handle.read(),
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
 
 
 @app.get("/health/radar")
