@@ -15,6 +15,7 @@ from app.config import get_settings
 from app.db import Base, SessionLocal, engine, get_db
 from app.models import Account, CommunityResult, Plan, Project, SearchRun, UsageEvent
 from app.schemas import ProjectCreate, ProjectOut, SearchCreate, SearchOut
+from app.miniapp import router as miniapp_router
 from app.security import require_admin
 from app.services.searches import execute_search
 
@@ -22,6 +23,7 @@ from app.services.searches import execute_search
 settings = get_settings()
 app = FastAPI(title=settings.app_name, version="0.1.0")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
+app.include_router(miniapp_router)
 
 PLAN_LIMITS = {Plan.free: 5, Plan.pro: 100, Plan.team: 500}
 
@@ -36,9 +38,25 @@ def startup() -> None:
 
 
 @app.get("/", response_class=HTMLResponse)
+def landing() -> str:
+    with open("app/static/landing.html", encoding="utf-8") as handle:
+        return (
+            handle.read()
+            .replace("{{APP_NAME}}", settings.app_name)
+            .replace("{{BOT_USERNAME}}", settings.tg_bot_username.lstrip("@"))
+        )
+
+
+@app.get("/admin", response_class=HTMLResponse)
 def dashboard() -> str:
     with open("app/static/index.html", encoding="utf-8") as handle:
         return handle.read().replace("{{APP_NAME}}", settings.app_name)
+
+
+@app.get("/app", response_class=HTMLResponse)
+def mini_app() -> str:
+    with open("app/static/miniapp.html", encoding="utf-8") as handle:
+        return handle.read()
 
 
 @app.get("/health")
@@ -216,14 +234,21 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(defaul
     return {"received": True}
 
 
-async def bot_send(chat_id: int, text: str) -> None:
+async def bot_send(chat_id: int, text: str, reply_markup: dict | None = None) -> None:
     if not settings.tg_bot_token:
         return
+    payload = {"chat_id": chat_id, "text": text, "disable_web_page_preview": True}
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
     async with httpx.AsyncClient(timeout=15) as client:
-        await client.post(f"https://api.telegram.org/bot{settings.tg_bot_token}/sendMessage", json={"chat_id": chat_id, "text": text, "disable_web_page_preview": True})
+        response = await client.post(
+            f"https://api.telegram.org/bot{settings.tg_bot_token}/sendMessage",
+            json=payload,
+        )
+        response.raise_for_status()
 
 
-async def max_send(chat_id: int, text: str) -> None:
+async def max_send(chat_id: int, text: str, reply_markup: dict | None = None) -> None:
     if not settings.max_bot_token:
         return
     async with httpx.AsyncClient(timeout=15) as client:
@@ -236,39 +261,120 @@ async def max_send(chat_id: int, text: str) -> None:
         response.raise_for_status()
 
 
-async def handle_chat_command(chat_id: int, text: str, sender) -> None:
-    if text == "/start":
-        await sender(chat_id, "TeleScope ищет только публичные Telegram-каналы и группы. Команды: /projects, /new Название, /search ID запрос")
-    elif text == "/projects":
-        with SessionLocal() as db:
-            items = db.scalars(select(Project).order_by(Project.id)).all()
-            await sender(chat_id, "\n".join(f"{p.id}: {p.name}" for p in items) or "Проектов пока нет")
-    elif text.startswith("/new "):
-        with SessionLocal() as db:
-            account = default_account(db)
-            project = Project(account_id=account.id, name=text[5:][:160])
-            db.add(project); db.commit(); db.refresh(project)
-            await sender(chat_id, f"Проект создан: {project.id}")
-    elif text.startswith("/search "):
-        try:
-            project_id_text, query = text[8:].split(" ", 1)
-            project_id = int(project_id_text)
-        except ValueError:
-            await sender(chat_id, "Формат: /search ID запрос")
+def telegram_account(db: Session, chat_id: int, user: dict | None = None) -> Account:
+    user = user or {}
+    telegram_id = str(user.get("id") or chat_id)
+    account = db.scalar(select(Account).where(Account.telegram_id == telegram_id))
+    first = (user.get("first_name") or "").strip()
+    last = (user.get("last_name") or "").strip()
+    username = (user.get("username") or "").strip()
+    name = " ".join(part for part in (first, last) if part).strip()
+    if username:
+        name = f"{name} (@{username})".strip()
+    name = name or f"Telegram {telegram_id}"
+    if not account:
+        account = Account(name=name[:160], telegram_id=telegram_id, plan=Plan.free)
+        db.add(account)
+        db.commit()
+        db.refresh(account)
+    elif account.name != name[:160]:
+        account.name = name[:160]
+        db.commit()
+        db.refresh(account)
+    return account
+
+
+async def handle_chat_command(
+    chat_id: int,
+    text: str,
+    sender,
+    user: dict | None = None,
+    platform: str = "telegram",
+) -> None:
+    with SessionLocal() as db:
+        account = telegram_account(db, chat_id, user) if platform == "telegram" else default_account(db)
+
+        if text == "/start":
+            markup = None
+            if platform == "telegram":
+                markup = {
+                    "inline_keyboard": [[
+                        {
+                            "text": "🚀 Открыть TeleScope",
+                            "web_app": {"url": f"{settings.public_base_url.rstrip('/')}/app"},
+                        }
+                    ]]
+                }
+            await sender(
+                chat_id,
+                "TeleScope ищет публичные Telegram-каналы и группы по любым нишам. "
+                "Открой приложение кнопкой ниже или используй команды: /projects, /new Название, /search ID запрос, /plan",
+                markup,
+            )
             return
-        with SessionLocal() as db:
-            project = db.get(Project, project_id)
-            account = default_account(db)
+
+        if text == "/plan":
+            month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            used = db.scalar(
+                select(func.coalesce(func.sum(UsageEvent.quantity), 0)).where(
+                    UsageEvent.account_id == account.id,
+                    UsageEvent.event_type == "search",
+                    UsageEvent.created_at >= month_start,
+                )
+            )
+            await sender(
+                chat_id,
+                f"Тариф: {account.plan.value}. Использовано: {int(used or 0)} из {PLAN_LIMITS[account.plan]} поисков в этом месяце.",
+                None,
+            )
+            return
+
+        if text == "/projects":
+            items = db.scalars(
+                select(Project)
+                .where(Project.account_id == account.id)
+                .order_by(Project.id)
+            ).all()
+            await sender(chat_id, "\n".join(f"{p.id}: {p.name}" for p in items) or "Проектов пока нет", None)
+            return
+
+        if text.startswith("/new "):
+            project = Project(account_id=account.id, name=text[5:][:160])
+            db.add(project)
+            db.commit()
+            db.refresh(project)
+            await sender(chat_id, f"Проект создан: {project.id}", None)
+            return
+
+        if text.startswith("/search "):
+            try:
+                project_id_text, query = text[8:].split(" ", 1)
+                project_id = int(project_id_text)
+            except ValueError:
+                await sender(chat_id, "Формат: /search ID запрос", None)
+                return
+
+            project = db.scalar(
+                select(Project).where(Project.id == project_id, Project.account_id == account.id)
+            )
             if not project:
-                await sender(chat_id, "Проект не найден")
-            else:
-                ensure_limit(db, account)
-                run = SearchRun(project_id=project.id, query=query[:300])
-                db.add_all([run, UsageEvent(account_id=account.id, event_type="search")]); db.commit(); db.refresh(run)
-                await execute_search(db, run, project.referral_prefix)
-                await sender(chat_id, f"Готово: {run.result_count} сообществ. Откройте {settings.public_base_url}")
-    else:
-        await sender(chat_id, "Неизвестная команда. /start — справка")
+                await sender(chat_id, "Проект не найден", None)
+                return
+
+            ensure_limit(db, account)
+            run = SearchRun(project_id=project.id, query=query[:300])
+            db.add_all([run, UsageEvent(account_id=account.id, event_type="search")])
+            db.commit()
+            db.refresh(run)
+            await execute_search(db, run, project.referral_prefix)
+            await sender(
+                chat_id,
+                f"Готово: {run.result_count} сообществ. Открой приложение: {settings.public_base_url}/app",
+                None,
+            )
+            return
+
+        await sender(chat_id, "Неизвестная команда. /start — открыть TeleScope", None)
 
 
 @app.post("/webhooks/telegram/{secret}")
@@ -279,9 +385,10 @@ async def telegram_webhook(secret: str, request: Request):
     message = update.get("message") or {}
     chat_id = int((message.get("chat") or {}).get("id", 0))
     text = (message.get("text") or "").strip()
-    if not chat_id or (settings.bot_admin_ids and chat_id not in settings.bot_admin_ids):
+    user = message.get("from") or {}
+    if not chat_id:
         return {"ok": True}
-    await handle_chat_command(chat_id, text, bot_send)
+    await handle_chat_command(chat_id, text, bot_send, user=user, platform="telegram")
     return {"ok": True}
 
 
@@ -306,5 +413,5 @@ async def max_webhook(request: Request):
     chat_id = int(recipient.get("chat_id") or update.get("chat_id") or 0)
     text = (body.get("text") or "").strip()
     if chat_id and text:
-        await handle_chat_command(chat_id, text, max_send)
+        await handle_chat_command(chat_id, text, max_send, platform="max")
     return {"ok": True}
