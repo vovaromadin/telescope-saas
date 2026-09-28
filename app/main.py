@@ -300,14 +300,14 @@ async def handle_chat_command(
                 markup = {
                     "inline_keyboard": [[
                         {
-                            "text": "🚀 Открыть TeleScope",
+                            "text": "🚀 Открыть TG Market Radar",
                             "web_app": {"url": f"{settings.public_base_url.rstrip('/')}/app"},
                         }
                     ]]
                 }
             await sender(
                 chat_id,
-                "TeleScope ищет публичные Telegram-каналы и группы по любым нишам. "
+                "TG Market Radar ищет публичные Telegram-каналы и группы по любым нишам. "
                 "Открой приложение кнопкой ниже или используй команды: /projects, /new Название, /search ID запрос, /plan",
                 markup,
             )
@@ -374,7 +374,7 @@ async def handle_chat_command(
             )
             return
 
-        await sender(chat_id, "Неизвестная команда. /start — открыть TeleScope", None)
+        await sender(chat_id, "Неизвестная команда. /start — открыть TG Market Radar", None)
 
 
 @app.post("/webhooks/telegram/{secret}")
@@ -403,7 +403,7 @@ async def max_webhook(request: Request):
     update = await request.json()
     update_type = update.get("update_type")
     if update_type == "bot_started":
-        await max_send(int(update.get("chat_id", 0)), "TeleScope готов. /start — команды")
+        await max_send(int(update.get("chat_id", 0)), "TG Market Radar готов. /start — команды")
         return {"ok": True}
     if update_type != "message_created":
         return {"ok": True}
