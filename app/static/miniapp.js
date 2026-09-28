@@ -125,6 +125,8 @@ function setView(name) {
     button.classList.toggle("active", active);
     if (active) button.scrollIntoView({behavior:"smooth", block:"nearest", inline:"center"});
   });
+  const crmJump = $("crmJump");
+  if (crmJump) crmJump.hidden = !(name === "radar" && state.crmAddedCount > 0);
   if (name === "radar") { refreshTelegramConnection(); refreshRadarSources(); }
   refreshCurrentView();
 }
@@ -340,7 +342,7 @@ function renderResults(rows) {
         const crmJumpCount = $("crmJumpCount");
         if (crmJump && crmJumpCount) {
           crmJumpCount.textContent = state.crmAddedCount;
-          crmJump.hidden = false;
+          crmJump.hidden = state.activeView !== "radar";
         }
         refreshOverview();
       } catch (error) {
