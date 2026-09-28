@@ -20,6 +20,11 @@ def safe_int32(value: object) -> int:
     return max(0, min(number, 2_147_483_647))
 
 
+def safe_text(value: object, limit: int) -> str:
+    text = str(value or "")
+    return text if len(text) <= limit else text[:limit]
+
+
 async def execute_search(db: Session, run: SearchRun, referral_prefix: str, limit: Optional[int] = None, telegram_session: Optional[str] = None) -> None:
     settings = get_settings()
     search_settings = settings.model_copy(update={"tg_session": telegram_session}) if telegram_session else settings
@@ -34,11 +39,11 @@ async def execute_search(db: Session, run: SearchRun, referral_prefix: str, limi
             db.add(
                 CommunityResult(
                     search_id=run.id,
-                    telegram_id=item.telegram_id,
-                    kind=item.kind,
-                    title=item.title,
-                    username=item.username,
-                    url=item.url,
+                    telegram_id=safe_text(item.telegram_id, 64),
+                    kind=safe_text(item.kind, 20),
+                    title=safe_text(item.title, 300),
+                    username=safe_text(item.username, 64),
+                    url=safe_text(item.url, 255),
                     description=item.description,
                     public_contacts=json.dumps(item.public_contacts, ensure_ascii=False),
                     subscribers=safe_int32(item.subscribers),
@@ -50,8 +55,8 @@ async def execute_search(db: Session, run: SearchRun, referral_prefix: str, limi
                     audience_score=item.audience_score,
                     total_score=item.total_score,
                     matched_snippets=json.dumps(item.snippets, ensure_ascii=False),
-                    referral_url=referral_link(settings.referral_bot_username, referral_prefix, item.username),
-                    max_referral_url=max_referral_link(settings.max_bot_username, referral_prefix, item.username),
+                    referral_url=safe_text(referral_link(settings.referral_bot_username, referral_prefix, item.username), 500),
+                    max_referral_url=safe_text(max_referral_link(settings.max_bot_username, referral_prefix, item.username), 500),
                 )
             )
         run.result_count = len(communities)
@@ -63,10 +68,11 @@ async def execute_search(db: Session, run: SearchRun, referral_prefix: str, limi
             run.error = "Источники Radar не вернули результатов."
         db.commit()
     except Exception as exc:
+        print(f"Radar search {run.id} failed: {type(exc).__name__}: {exc}", flush=True)
         db.rollback()
         failed_run = db.get(SearchRun, run.id)
         if failed_run:
             failed_run.status = SearchStatus.failed
-            failed_run.error = str(exc)[:1000]
+            failed_run.error = "Не удалось сохранить результаты Radar. Повтори поиск после обновления."
             failed_run.completed_at = datetime.now(timezone.utc)
             db.commit()
