@@ -44,7 +44,9 @@ class TelegramDiscovery:
 
     async def search(self, query: str, limit: int) -> list[Community]:
         if not self.settings.telegram_ready:
-            return []
+            from app.services.web_discovery import WebDiscovery
+
+            return await WebDiscovery().search(query, limit)
         client = TelegramClient(
             StringSession(self.settings.tg_session),
             self.settings.tg_api_id,
