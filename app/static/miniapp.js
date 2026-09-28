@@ -4,7 +4,9 @@ const state = {
   projects: [],
   projectId: null,
   lastSearchId: null,
-  activeView: "overview"
+  activeView: "overview",
+  telegramConnected: false,
+  telegramPoll: null
 };
 const $ = (id) => document.getElementById(id);
 
@@ -50,8 +52,11 @@ async function refreshMe() {
   const me = await api("/api/app/me");
   $("planBadge").textContent = me.plan.toUpperCase();
   $("usage").textContent = "Использовано " + me.used + " из " + me.monthly_limit + " поисков в этом месяце";
+  state.telegramConnected = Boolean(me.telegram_ready);
   if (!me.telegram_ready) {
-    notify("Поисковый Telegram-аккаунт пока не подключён. CRM и планирование работают, живой Radar — после подключения.");
+    notify(me.telegram_api_ready
+      ? "Подключи Telegram-аккаунт в Radar, чтобы включить живой поиск."
+      : "Telegram API ещё не настроен.");
   }
 }
 
@@ -87,8 +92,11 @@ function setView(name) {
     section.hidden = section.dataset.view !== name;
   });
   document.querySelectorAll("[data-view-button]").forEach(function(button) {
-    button.classList.toggle("active", button.dataset.viewButton === name);
+    const active = button.dataset.viewButton === name;
+    button.classList.toggle("active", active);
+    if (active) button.scrollIntoView({behavior:"smooth", block:"nearest", inline:"center"});
   });
+  if (name === "radar") refreshTelegramConnection();
   refreshCurrentView();
 }
 
@@ -122,6 +130,107 @@ $("projectForm").onsubmit = async function(event) {
     await refreshCurrentView();
   } catch (error) {
     notify(error.message);
+  }
+};
+
+
+async function refreshTelegramConnection() {
+  const badge = $("tgConnectionBadge");
+  const status = $("tgConnectionStatus");
+  const startButton = $("tgQrStart");
+  const loginLink = $("tgQrLink");
+  const disconnect = $("tgDisconnect");
+  if (!badge || !status) return null;
+
+  try {
+    const info = await api("/api/app/telegram/connection");
+    state.telegramConnected = Boolean(info.connected);
+    badge.classList.remove("connected");
+    startButton.hidden = false;
+    loginLink.hidden = true;
+    disconnect.hidden = true;
+
+    if (!info.api_ready) {
+      badge.textContent = "API";
+      status.textContent = "Telegram API ещё не настроен.";
+      startButton.hidden = true;
+      return info;
+    }
+
+    if (info.connected) {
+      badge.textContent = "Подключён";
+      badge.classList.add("connected");
+      status.textContent = info.display_name ? "Подключён: " + info.display_name : "Telegram-аккаунт подключён.";
+      startButton.hidden = true;
+      disconnect.hidden = false;
+      if (state.telegramPoll) {
+        clearInterval(state.telegramPoll);
+        state.telegramPoll = null;
+      }
+      return info;
+    }
+
+    badge.textContent = "Не подключён";
+    if (info.status === "waiting_qr") {
+      status.textContent = "Подтверди новый вход в официальном Telegram.";
+      startButton.textContent = "Создать новую ссылку";
+    } else if (info.status === "two_factor_required") {
+      status.textContent = "На аккаунте включена 2FA. QR-вход потребовал дополнительную проверку; TG Ракета не запрашивает пароль.";
+      startButton.textContent = "Попробовать другой аккаунт";
+    } else if (info.status === "expired") {
+      status.textContent = "Ссылка истекла. Создай новую.";
+      startButton.textContent = "Создать новую ссылку";
+    } else if (info.status === "error") {
+      status.textContent = "Telegram не завершил подключение. Создай новую ссылку.";
+      startButton.textContent = "Повторить";
+    } else {
+      status.textContent = "Подключение выполняется через подтверждение в официальном Telegram.";
+      startButton.textContent = "Подключить через Telegram";
+    }
+    return info;
+  } catch (error) {
+    status.textContent = error.message;
+    return null;
+  }
+}
+
+async function pollTelegramConnection() {
+  if (state.telegramPoll) clearInterval(state.telegramPoll);
+  state.telegramPoll = setInterval(async function() {
+    const info = await refreshTelegramConnection();
+    if (!info || info.connected || ["two_factor_required","expired","error"].includes(info.status)) {
+      clearInterval(state.telegramPoll);
+      state.telegramPoll = null;
+      await refreshMe();
+    }
+  }, 1500);
+}
+
+$("tgQrStart").onclick = async function() {
+  const button = $("tgQrStart");
+  const link = $("tgQrLink");
+  button.disabled = true;
+  try {
+    const result = await api("/api/app/telegram/qr/start", {method:"POST"});
+    link.href = result.login_url;
+    link.hidden = false;
+    link.textContent = "Открыть подтверждение в Telegram";
+    $("tgConnectionStatus").textContent = "Нажми ссылку ниже и подтверди новый вход в Telegram.";
+    button.textContent = "Создать новую ссылку";
+    pollTelegramConnection();
+  } catch (error) {
+    $("tgConnectionStatus").textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+};
+
+$("tgDisconnect").onclick = async function() {
+  try {
+    await api("/api/app/telegram/connection", {method:"DELETE"});
+    await Promise.all([refreshTelegramConnection(), refreshMe()]);
+  } catch (error) {
+    $("tgConnectionStatus").textContent = error.message;
   }
 };
 
@@ -233,7 +342,7 @@ async function download(format) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "tg-growth-radar-" + state.lastSearchId + "." + format;
+  a.download = "tg-raketa-radar-" + state.lastSearchId + "." + format;
   a.click();
   setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
 }
@@ -359,11 +468,11 @@ document.querySelectorAll("[data-plan]").forEach(function(button) {
 async function boot() {
   if (!state.initData) {
     $("authError").hidden = false;
-    $("authError").textContent = "Открой TG Growth OS из Telegram-бота — браузерная версия не получает Telegram-авторизацию.";
+    $("authError").textContent = "Открой TG Ракета из Telegram-бота — браузерная версия не получает Telegram-авторизацию.";
     return;
   }
   try {
-    await Promise.all([refreshMe(), refreshProjects()]);
+    await Promise.all([refreshMe(), refreshProjects(), refreshTelegramConnection()]);
     if (state.projectId) await refreshOverview();
   } catch (error) {
     $("authError").hidden = false;
