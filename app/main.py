@@ -23,6 +23,7 @@ from app.services.searches import execute_search
 from app.services.telemetr_discovery import TelemetrDiscovery
 from app.services.tgstat_discovery import TGStatDiscovery
 from app.services.tgstat_public_discovery import TGStatPublicDiscovery
+from app.services.opentg_discovery import OpenTGDiscovery
 from app.services.web_discovery import WebDiscovery
 
 
@@ -102,6 +103,7 @@ async def radar_health() -> dict:
         "query": query,
         "telemetr": {"configured": bool(settings.telemetr_api_key), "count": 0, "error": None},
         "tgstat": {"configured": bool(settings.tgstat_api_token), "count": 0, "error": None},
+        "open_tg": {"configured": True, "count": 0, "error": None},
         "tgstat_public": {"configured": True, "count": 0, "error": None},
         "public_web": {"configured": True, "count": 0, "error": None},
     }
@@ -114,6 +116,7 @@ async def radar_health() -> dict:
             result[name]["error"] = f"{type(exc).__name__}: {str(exc)[:180]}"
 
     tasks = [
+        run_source("open_tg", OpenTGDiscovery().search(query, 10)),
         run_source("tgstat_public", TGStatPublicDiscovery().search(query, 10)),
         run_source("public_web", WebDiscovery().search(query, 10)),
     ]
