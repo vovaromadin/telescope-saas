@@ -7,6 +7,7 @@ from app.services.discovery import TelegramDiscovery
 from app.services.telemetr_discovery import TelemetrDiscovery
 from app.services.tgstat_discovery import TGStatDiscovery
 from app.services.tgstat_public_discovery import TGStatPublicDiscovery
+from app.services.opentg_discovery import OpenTGDiscovery
 from app.services.web_discovery import WebDiscovery, WebCommunity
 
 
@@ -37,6 +38,9 @@ class HybridDiscovery:
         if self.settings.telemetr_api_key:
             tasks.append(TelemetrDiscovery(self.settings.telemetr_api_key).search(query, limit))
             labels.append("Telemetr")
+
+        tasks.append(OpenTGDiscovery().search(query, limit))
+        labels.append("open.tg")
 
         tasks.append(TGStatPublicDiscovery().search(query, limit))
         labels.append("TGStat public")
