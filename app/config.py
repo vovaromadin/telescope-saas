@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./telescope.db"
     admin_api_key: str = "change-me"
     telemetr_api_key: str = ""
+    tgstat_api_token: str = ""
+    tgstat_country: str = "ru"
+    tgstat_language: str = "russian"
 
     tg_api_id: Optional[int] = None
     tg_api_hash: str = ""
