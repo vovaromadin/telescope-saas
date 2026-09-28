@@ -10,7 +10,7 @@ services:
     dockerfilePath: ./Dockerfile
     envVars:
       - key: APP_NAME
-        value: TG Growth OS
+        value: TG Ракета
       - key: APP_ENV
         value: production
       - key: PUBLIC_BASE_URL
@@ -18,4 +18,10 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: ADMIN_API_KEY
+        generateValue: true
+      - key: TG_BOT_USERNAME
+        value: TGRaketa_bot
+      - key: TG_BOT_TOKEN
+        sync: false
+      - key: TG_WEBHOOK_SECRET
         generateValue: true
