@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     public_base_url: str = "http://localhost:8000"
     database_url: str = "sqlite:///./telescope.db"
     admin_api_key: str = "change-me"
+    telemetr_api_key: str = ""
 
     tg_api_id: Optional[int] = None
     tg_api_hash: str = ""
