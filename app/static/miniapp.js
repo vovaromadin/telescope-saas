@@ -139,6 +139,7 @@ async function refreshTelegramConnection() {
   const status = $("tgConnectionStatus");
   const startButton = $("tgQrStart");
   const loginLink = $("tgQrLink");
+  const qrCode = $("tgQrCode");
   const disconnect = $("tgDisconnect");
   if (!badge || !status) return null;
 
@@ -163,6 +164,8 @@ async function refreshTelegramConnection() {
       status.textContent = info.display_name ? "Подключён: " + info.display_name : "Telegram-аккаунт подключён.";
       startButton.hidden = true;
       disconnect.hidden = false;
+      qrCode.hidden = true;
+      qrCode.innerHTML = "";
       if (state.telegramPoll) {
         clearInterval(state.telegramPoll);
         state.telegramPoll = null;
@@ -172,20 +175,28 @@ async function refreshTelegramConnection() {
 
     badge.textContent = "Не подключён";
     if (info.status === "waiting_qr") {
-      status.textContent = "Подтверди новый вход в официальном Telegram.";
-      startButton.textContent = "Создать новую ссылку";
+      status.textContent = "Отсканируй QR в Telegram: Настройки → Устройства → Подключить устройство.";
+      startButton.textContent = "Показать новый QR";
     } else if (info.status === "two_factor_required") {
       status.textContent = "На аккаунте включена 2FA. QR-вход потребовал дополнительную проверку; TG Ракета не запрашивает пароль.";
       startButton.textContent = "Попробовать другой аккаунт";
+      qrCode.hidden = true;
+      qrCode.innerHTML = "";
     } else if (info.status === "expired") {
-      status.textContent = "Ссылка истекла. Создай новую.";
-      startButton.textContent = "Создать новую ссылку";
+      status.textContent = "QR истёк. Создай новый.";
+      startButton.textContent = "Показать новый QR";
+      qrCode.hidden = true;
+      qrCode.innerHTML = "";
     } else if (info.status === "error") {
-      status.textContent = "Telegram не завершил подключение. Создай новую ссылку.";
+      status.textContent = "Telegram не завершил подключение. Создай новый QR.";
       startButton.textContent = "Повторить";
+      qrCode.hidden = true;
+      qrCode.innerHTML = "";
     } else {
       status.textContent = "Подключение выполняется через подтверждение в официальном Telegram.";
-      startButton.textContent = "Подключить через Telegram";
+      startButton.textContent = "Показать QR для подключения";
+      qrCode.hidden = true;
+      qrCode.innerHTML = "";
     }
     return info;
   } catch (error) {
@@ -209,14 +220,17 @@ async function pollTelegramConnection() {
 $("tgQrStart").onclick = async function() {
   const button = $("tgQrStart");
   const link = $("tgQrLink");
+  const qrCode = $("tgQrCode");
   button.disabled = true;
   try {
     const result = await api("/api/app/telegram/qr/start", {method:"POST"});
     link.href = result.login_url;
     link.hidden = false;
     link.textContent = "Открыть подтверждение в Telegram";
-    $("tgConnectionStatus").textContent = "Нажми ссылку ниже и подтверди новый вход в Telegram.";
-    button.textContent = "Создать новую ссылку";
+    qrCode.innerHTML = result.qr_svg || "";
+    qrCode.hidden = !result.qr_svg;
+    $("tgConnectionStatus").textContent = "На телефоне открой Telegram → Настройки → Устройства → Подключить устройство и отсканируй QR.";
+    button.textContent = "Показать новый QR";
     pollTelegramConnection();
   } catch (error) {
     $("tgConnectionStatus").textContent = error.message;
