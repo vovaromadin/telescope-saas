@@ -100,3 +100,6 @@ footer{text-align:center;color:var(--tg-theme-hint-color,#6b7280);font-size:11px
   .connection-actions{display:grid;grid-template-columns:1fr}
   .connection-actions>*{width:100%}
 }
+
+.qr-code{display:grid;place-items:center;margin:12px 0;padding:12px;border-radius:16px;background:#fff}
+.qr-code svg{width:min(260px,100%);height:auto;display:block}
