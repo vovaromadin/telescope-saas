@@ -4,8 +4,8 @@ from datetime import datetime
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -25,6 +25,36 @@ class LeadCreate(BaseModel):
     public_contact: str = Field(default="", max_length=220)
     intent_score: float = Field(default=0, ge=0, le=100)
     note: str = Field(default="", max_length=5000)
+
+    @field_validator("display_name", mode="before")
+    @classmethod
+    def clamp_display_name(cls, value):
+        return str(value or "").strip()[:220]
+
+    @field_validator("source", mode="before")
+    @classmethod
+    def clamp_source(cls, value):
+        return str(value or "manual").strip()[:40] or "manual"
+
+    @field_validator("source_url", mode="before")
+    @classmethod
+    def clamp_source_url(cls, value):
+        return str(value or "").strip()[:500]
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def clamp_username(cls, value):
+        return str(value or "").strip().lstrip("@")[:100]
+
+    @field_validator("public_contact", mode="before")
+    @classmethod
+    def clamp_public_contact(cls, value):
+        return str(value or "").strip()[:220]
+
+    @field_validator("note", mode="before")
+    @classmethod
+    def clamp_note(cls, value):
+        return str(value or "")[:5000]
 
 
 class LeadPatch(BaseModel):
@@ -180,6 +210,27 @@ def create_lead(
     db: Session = Depends(get_db),
 ) -> dict:
     owned_project(db, account, project_id)
+
+    if payload.source == "radar":
+        matchers = []
+        if payload.username:
+            matchers.append(Lead.username == payload.username)
+        if payload.source_url:
+            matchers.append(Lead.source_url == payload.source_url)
+        if matchers:
+            existing = db.scalar(
+                select(Lead)
+                .where(Lead.project_id == project_id, or_(*matchers))
+                .order_by(Lead.id.desc())
+                .limit(1)
+            )
+            if existing:
+                if payload.intent_score > existing.intent_score:
+                    existing.intent_score = payload.intent_score
+                    db.commit()
+                    db.refresh(existing)
+                return _lead(existing)
+
     row = Lead(project_id=project_id, **payload.model_dump())
     db.add(row)
     db.commit()
