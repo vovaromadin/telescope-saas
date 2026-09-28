@@ -32,7 +32,12 @@ class TelemetrDiscovery:
             return []
         response.raise_for_status()
         payload = response.json()
-        items = payload.get("items", []) if isinstance(payload, dict) else []
+        if isinstance(payload, list):
+            items = payload
+        elif isinstance(payload, dict):
+            items = payload.get("items", [])
+        else:
+            items = []
 
         rows: list[WebCommunity] = []
         for item in items:
@@ -49,11 +54,13 @@ class TelemetrDiscovery:
             description = str(item.get("about") or "").strip()
             peer_type = str(item.get("peer_type") or "channel").casefold()
 
-            participants = item.get("participants") or {}
+            participants = item.get("participants")
             if isinstance(participants, dict):
-                subscribers = int(participants.get("total") or 0)
+                subscribers = int(participants.get("total") or participants.get("count") or 0)
+            elif isinstance(participants, (int, float)):
+                subscribers = int(participants)
             else:
-                subscribers = 0
+                subscribers = int(item.get("participants_count") or item.get("subscribers") or 0)
 
             links = item.get("links") or {}
             url = ""
