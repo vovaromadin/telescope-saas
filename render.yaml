@@ -25,3 +25,5 @@ services:
         sync: false
       - key: TG_WEBHOOK_SECRET
         generateValue: true
+      - key: TELEMETR_API_KEY
+        sync: false
