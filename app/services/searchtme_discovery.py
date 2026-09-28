@@ -1,19 +1,18 @@
 from __future__ import annotations
 
-import asyncio
 import re
 
 import httpx
 from bs4 import BeautifulSoup
 
-from app.services.web_discovery import USER_AGENT, WebCommunity, WebDiscovery
+from app.scoring import extract_public_contacts, score_community
+from app.services.web_discovery import USER_AGENT, WebCommunity, parse_human_count
 
 
 CHANNEL_LINK_RE = re.compile(
     r"(?:https?://(?:[a-z]{2}\.)?search-t\.me)?/channel/([A-Za-z0-9_]{5,32})",
     re.IGNORECASE,
 )
-HANDLE_RE = re.compile(r"@([A-Za-z0-9_]{5,32})")
 
 
 def pick_searchtme_category(query: str) -> str:
@@ -42,8 +41,68 @@ def pick_searchtme_category(query: str) -> str:
     return "all"
 
 
+def compact_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value or "").strip()
+
+
+def parse_card(anchor, query: str) -> WebCommunity | None:
+    href = str(anchor.get("href") or "")
+    match = CHANNEL_LINK_RE.search(href)
+    if not match:
+        return None
+
+    username = match.group(1)
+    if username.casefold().endswith("bot"):
+        return None
+
+    raw = compact_text(anchor.get_text(" ", strip=True))
+    handle = f"@{username}"
+    before, sep, after = raw.partition(handle)
+    title = compact_text(before) if sep else username
+    remainder = compact_text(after) if sep else raw
+
+    # The card ends with audience/interaction metadata and "Open".
+    remainder = re.sub(r"\s+Open(?:\s+.*)?$", "", remainder, flags=re.IGNORECASE)
+    count_matches = list(
+        re.finditer(r"(\d+(?:[\s.,]\d+)*)\s*(K|M|К|М|тыс\.?|млн\.?)?", remainder, re.IGNORECASE)
+    )
+    subscribers = 0
+    if count_matches:
+        subscribers = max(parse_human_count(m.group(0)) for m in count_matches)
+
+    description = remainder
+    scores = score_community(
+        query,
+        title,
+        description,
+        [],
+        subscribers,
+        0,
+        0,
+    )
+
+    return WebCommunity(
+        telegram_id=f"searchtme:{username.casefold()}",
+        kind="channel",
+        title=(title or username)[:500],
+        username=username,
+        url=f"https://t.me/{username}",
+        description=description[:4000],
+        public_contacts=extract_public_contacts(description, username),
+        subscribers=subscribers,
+        messages_scanned=0,
+        messages_30d=0,
+        avg_views=0,
+        relevance_score=scores.relevance,
+        activity_score=scores.activity,
+        audience_score=scores.audience,
+        total_score=scores.total,
+        snippets=[],
+    )
+
+
 class SearchTMeDiscovery:
-    """Credential-free discovery via public search-t.me catalogue pages."""
+    """Credential-free discovery via server-rendered search-t.me catalogue cards."""
 
     def __init__(self) -> None:
         self.headers = {
@@ -54,69 +113,44 @@ class SearchTMeDiscovery:
     async def search(self, query: str, limit: int) -> list[WebCommunity]:
         limit = max(1, min(int(limit or 20), 50))
         category = pick_searchtme_category(query)
-        # English mirror currently exposes a larger catalogue and server-rendered cards.
-        urls = []
-        for page in range(1, 4):
-            suffix = "" if page == 1 else f"?page={page}"
-            urls.append(f"https://en.search-t.me/catalog/{category}{suffix}")
-        # Russian mirror is useful for local-language niches.
-        for page in range(1, 3):
-            suffix = "" if page == 1 else f"?page={page}"
-            urls.append(f"https://search-t.me/catalog/{category}{suffix}")
+
+        urls: list[str] = []
+        for host in ("https://search-t.me", "https://en.search-t.me"):
+            for page in range(1, 4):
+                suffix = "" if page == 1 else f"?page={page}"
+                urls.append(f"{host}/catalog/{category}{suffix}")
+
+        rows: dict[str, WebCommunity] = {}
 
         async with httpx.AsyncClient(
             headers=self.headers,
             timeout=15,
             follow_redirects=True,
         ) as client:
-            pages: list[str] = []
             for url in urls:
                 try:
                     response = await client.get(url)
-                    if response.status_code == 200 and response.text:
-                        pages.append(response.text)
+                    if response.status_code != 200 or not response.text:
+                        continue
                 except Exception:
                     continue
 
-            usernames: list[str] = []
-            seen: set[str] = set()
-            for html in pages:
-                soup = BeautifulSoup(html, "html.parser")
-                candidates: list[str] = []
+                soup = BeautifulSoup(response.text, "html.parser")
                 for anchor in soup.find_all("a", href=True):
-                    href = str(anchor.get("href") or "")
-                    match = CHANNEL_LINK_RE.search(href)
-                    if match:
-                        candidates.append(match.group(1))
-                # Cards render @username as visible text even if the link format changes.
-                candidates.extend(HANDLE_RE.findall(soup.get_text(" ", strip=True)))
-
-                for raw in candidates:
-                    key = raw.casefold()
-                    if key in seen or key.endswith("bot"):
+                    row = parse_card(anchor, query)
+                    if row is None:
                         continue
-                    seen.add(key)
-                    usernames.append(raw)
-                    if len(usernames) >= max(100, limit * 10):
+                    key = row.username.casefold()
+                    existing = rows.get(key)
+                    if existing is None or row.total_score > existing.total_score:
+                        rows[key] = row
+                    if len(rows) >= max(100, limit * 8):
                         break
 
-            if not usernames:
-                return []
-
-            analyzer = WebDiscovery()
-            semaphore = asyncio.Semaphore(6)
-
-            async def analyze(username: str) -> WebCommunity | None:
-                async with semaphore:
-                    return await analyzer._analyze(client, username, query)
-
-            rows = await asyncio.gather(
-                *(analyze(username) for username in usernames[: max(100, limit * 10)])
-            )
-
-        out = [row for row in rows if row is not None]
+        out = list(rows.values())
+        # Category membership is already a strong relevance signal; score breaks ties.
         out.sort(
-            key=lambda item: (item.relevance_score, item.total_score, item.subscribers),
+            key=lambda item: (item.relevance_score, item.audience_score, item.subscribers),
             reverse=True,
         )
         return out[:limit]
