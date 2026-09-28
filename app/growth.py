@@ -1,0 +1,305 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Literal, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from app.db import get_db
+from app.growth_models import Campaign, CampaignStatus, ContentItem, ContentStatus, GrowthEvent, Lead, LeadStatus
+from app.miniapp import current_account, owned_project
+from app.models import Account, CommunityResult, Project, SearchRun
+
+
+router = APIRouter(prefix="/api/app/growth", tags=["growth"])
+
+
+class LeadCreate(BaseModel):
+    display_name: str = Field(min_length=1, max_length=220)
+    source: str = Field(default="manual", max_length=40)
+    source_url: str = Field(default="", max_length=500)
+    username: str = Field(default="", max_length=100)
+    public_contact: str = Field(default="", max_length=220)
+    intent_score: float = Field(default=0, ge=0, le=100)
+    note: str = Field(default="", max_length=5000)
+
+
+class LeadPatch(BaseModel):
+    status: Optional[LeadStatus] = None
+    intent_score: Optional[float] = Field(default=None, ge=0, le=100)
+    note: Optional[str] = Field(default=None, max_length=5000)
+
+
+class ContentCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=220)
+    body: str = Field(default="", max_length=20000)
+    format: str = Field(default="post", max_length=40)
+
+
+class ContentPatch(BaseModel):
+    status: Optional[ContentStatus] = None
+    title: Optional[str] = Field(default=None, min_length=1, max_length=220)
+    body: Optional[str] = Field(default=None, max_length=20000)
+    scheduled_at: Optional[datetime] = None
+    published_url: Optional[str] = Field(default=None, max_length=500)
+
+
+class CampaignCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=220)
+    goal: str = Field(default="", max_length=5000)
+    channel: str = Field(default="telegram", max_length=60)
+    budget_daily: float = Field(default=0, ge=0)
+
+
+class CampaignPatch(BaseModel):
+    status: Optional[CampaignStatus] = None
+    goal: Optional[str] = Field(default=None, max_length=5000)
+    budget_daily: Optional[float] = Field(default=None, ge=0)
+
+
+class EventCreate(BaseModel):
+    kind: str = Field(min_length=1, max_length=60)
+    value: int = Field(default=1, ge=1, le=1_000_000)
+    detail: str = Field(default="", max_length=5000)
+
+
+def _owned_row(db: Session, account: Account, model, row_id: int):
+    row = db.scalar(
+        select(model)
+        .join(Project, Project.id == model.project_id)
+        .where(model.id == row_id, Project.account_id == account.id)
+    )
+    if not row:
+        raise HTTPException(404, "Item not found")
+    return row
+
+
+def _lead(row: Lead) -> dict:
+    return {
+        "id": row.id,
+        "project_id": row.project_id,
+        "source": row.source,
+        "source_url": row.source_url,
+        "display_name": row.display_name,
+        "username": row.username,
+        "public_contact": row.public_contact,
+        "intent_score": row.intent_score,
+        "note": row.note,
+        "status": row.status.value,
+        "created_at": row.created_at.isoformat(),
+        "updated_at": row.updated_at.isoformat(),
+    }
+
+
+def _content(row: ContentItem) -> dict:
+    return {
+        "id": row.id,
+        "project_id": row.project_id,
+        "title": row.title,
+        "body": row.body,
+        "format": row.format,
+        "status": row.status.value,
+        "scheduled_at": row.scheduled_at.isoformat() if row.scheduled_at else None,
+        "published_url": row.published_url,
+        "created_at": row.created_at.isoformat(),
+        "updated_at": row.updated_at.isoformat(),
+    }
+
+
+def _campaign(row: Campaign) -> dict:
+    return {
+        "id": row.id,
+        "project_id": row.project_id,
+        "name": row.name,
+        "goal": row.goal,
+        "channel": row.channel,
+        "status": row.status.value,
+        "budget_daily": row.budget_daily,
+        "created_at": row.created_at.isoformat(),
+        "updated_at": row.updated_at.isoformat(),
+    }
+
+
+@router.get("/projects/{project_id}/overview")
+def overview(
+    project_id: int,
+    account: Account = Depends(current_account),
+    db: Session = Depends(get_db),
+) -> dict:
+    owned_project(db, account, project_id)
+
+    def count(model, *where) -> int:
+        return int(db.scalar(select(func.count(model.id)).where(model.project_id == project_id, *where)) or 0)
+
+    discovered = int(
+        db.scalar(
+            select(func.count(CommunityResult.id))
+            .join(SearchRun, SearchRun.id == CommunityResult.search_id)
+            .where(SearchRun.project_id == project_id)
+        )
+        or 0
+    )
+    searches = int(db.scalar(select(func.count(SearchRun.id)).where(SearchRun.project_id == project_id)) or 0)
+
+    return {
+        "leads_total": count(Lead),
+        "leads_new": count(Lead, Lead.status == LeadStatus.new),
+        "leads_qualified": count(Lead, Lead.status == LeadStatus.qualified),
+        "leads_won": count(Lead, Lead.status == LeadStatus.won),
+        "content_draft": count(ContentItem, ContentItem.status == ContentStatus.draft),
+        "content_scheduled": count(ContentItem, ContentItem.status == ContentStatus.scheduled),
+        "campaigns_active": count(Campaign, Campaign.status == CampaignStatus.active),
+        "searches": searches,
+        "communities_discovered": discovered,
+    }
+
+
+@router.get("/projects/{project_id}/leads")
+def list_leads(
+    project_id: int,
+    status: Optional[LeadStatus] = Query(default=None),
+    account: Account = Depends(current_account),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    owned_project(db, account, project_id)
+    stmt = select(Lead).where(Lead.project_id == project_id)
+    if status:
+        stmt = stmt.where(Lead.status == status)
+    rows = db.scalars(stmt.order_by(Lead.intent_score.desc(), Lead.created_at.desc())).all()
+    return [_lead(row) for row in rows]
+
+
+@router.post("/projects/{project_id}/leads")
+def create_lead(
+    project_id: int,
+    payload: LeadCreate,
+    account: Account = Depends(current_account),
+    db: Session = Depends(get_db),
+) -> dict:
+    owned_project(db, account, project_id)
+    row = Lead(project_id=project_id, **payload.model_dump())
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _lead(row)
+
+
+@router.patch("/leads/{lead_id}")
+def patch_lead(
+    lead_id: int,
+    payload: LeadPatch,
+    account: Account = Depends(current_account),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = _owned_row(db, account, Lead, lead_id)
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(row, key, value)
+    db.commit()
+    db.refresh(row)
+    return _lead(row)
+
+
+@router.get("/projects/{project_id}/content")
+def list_content(
+    project_id: int,
+    status: Optional[ContentStatus] = Query(default=None),
+    account: Account = Depends(current_account),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    owned_project(db, account, project_id)
+    stmt = select(ContentItem).where(ContentItem.project_id == project_id)
+    if status:
+        stmt = stmt.where(ContentItem.status == status)
+    rows = db.scalars(stmt.order_by(ContentItem.created_at.desc())).all()
+    return [_content(row) for row in rows]
+
+
+@router.post("/projects/{project_id}/content")
+def create_content(
+    project_id: int,
+    payload: ContentCreate,
+    account: Account = Depends(current_account),
+    db: Session = Depends(get_db),
+) -> dict:
+    owned_project(db, account, project_id)
+    row = ContentItem(project_id=project_id, **payload.model_dump())
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _content(row)
+
+
+@router.patch("/content/{content_id}")
+def patch_content(
+    content_id: int,
+    payload: ContentPatch,
+    account: Account = Depends(current_account),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = _owned_row(db, account, ContentItem, content_id)
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(row, key, value)
+    db.commit()
+    db.refresh(row)
+    return _content(row)
+
+
+@router.get("/projects/{project_id}/campaigns")
+def list_campaigns(
+    project_id: int,
+    account: Account = Depends(current_account),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    owned_project(db, account, project_id)
+    rows = db.scalars(
+        select(Campaign).where(Campaign.project_id == project_id).order_by(Campaign.created_at.desc())
+    ).all()
+    return [_campaign(row) for row in rows]
+
+
+@router.post("/projects/{project_id}/campaigns")
+def create_campaign(
+    project_id: int,
+    payload: CampaignCreate,
+    account: Account = Depends(current_account),
+    db: Session = Depends(get_db),
+) -> dict:
+    owned_project(db, account, project_id)
+    row = Campaign(project_id=project_id, **payload.model_dump())
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _campaign(row)
+
+
+@router.patch("/campaigns/{campaign_id}")
+def patch_campaign(
+    campaign_id: int,
+    payload: CampaignPatch,
+    account: Account = Depends(current_account),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = _owned_row(db, account, Campaign, campaign_id)
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(row, key, value)
+    db.commit()
+    db.refresh(row)
+    return _campaign(row)
+
+
+@router.post("/projects/{project_id}/events")
+def create_event(
+    project_id: int,
+    payload: EventCreate,
+    account: Account = Depends(current_account),
+    db: Session = Depends(get_db),
+) -> dict:
+    owned_project(db, account, project_id)
+    row = GrowthEvent(project_id=project_id, **payload.model_dump())
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {"id": row.id, "kind": row.kind, "value": row.value, "created_at": row.created_at.isoformat()}
