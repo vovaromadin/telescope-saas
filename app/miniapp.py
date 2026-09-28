@@ -264,7 +264,7 @@ def export(
     if format == "json":
         return JSONResponse(
             data,
-            headers={"Content-Disposition": f'attachment; filename="telescope-search-{search_id}.json"'},
+            headers={"Content-Disposition": f'attachment; filename="tg-market-radar-search-{search_id}.json"'},
         )
     if format != "csv":
         raise HTTPException(404, "Supported formats: csv, json")
@@ -298,7 +298,7 @@ def export(
     return StreamingResponse(
         iter([output.getvalue()]),
         media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="telescope-search-{search_id}.csv"'},
+        headers={"Content-Disposition": f'attachment; filename="tg-market-radar-search-{search_id}.csv"'},
     )
 
 
