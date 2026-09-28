@@ -12,6 +12,14 @@ from app.scoring import max_referral_link, referral_link
 from app.services.hybrid_discovery import HybridDiscovery
 
 
+def safe_int32(value: object) -> int:
+    try:
+        number = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, min(number, 2_147_483_647))
+
+
 async def execute_search(db: Session, run: SearchRun, referral_prefix: str, limit: Optional[int] = None, telegram_session: Optional[str] = None) -> None:
     settings = get_settings()
     search_settings = settings.model_copy(update={"tg_session": telegram_session}) if telegram_session else settings
@@ -33,9 +41,9 @@ async def execute_search(db: Session, run: SearchRun, referral_prefix: str, limi
                     url=item.url,
                     description=item.description,
                     public_contacts=json.dumps(item.public_contacts, ensure_ascii=False),
-                    subscribers=item.subscribers,
-                    messages_scanned=item.messages_scanned,
-                    messages_30d=item.messages_30d,
+                    subscribers=safe_int32(item.subscribers),
+                    messages_scanned=safe_int32(item.messages_scanned),
+                    messages_30d=safe_int32(item.messages_30d),
                     avg_views=item.avg_views,
                     relevance_score=item.relevance_score,
                     activity_score=item.activity_score,
@@ -55,7 +63,10 @@ async def execute_search(db: Session, run: SearchRun, referral_prefix: str, limi
             run.error = "Источники Radar не вернули результатов."
         db.commit()
     except Exception as exc:
-        run.status = SearchStatus.failed
-        run.error = str(exc)[:1000]
-        run.completed_at = datetime.now(timezone.utc)
-        db.commit()
+        db.rollback()
+        failed_run = db.get(SearchRun, run.id)
+        if failed_run:
+            failed_run.status = SearchStatus.failed
+            failed_run.error = str(exc)[:1000]
+            failed_run.completed_at = datetime.now(timezone.utc)
+            db.commit()
