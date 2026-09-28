@@ -27,3 +27,5 @@ services:
         generateValue: true
       - key: TELEMETR_API_KEY
         sync: false
+      - key: TGSTAT_API_TOKEN
+        sync: false
