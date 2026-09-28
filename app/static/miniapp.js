@@ -53,10 +53,19 @@ async function refreshMe() {
   $("planBadge").textContent = me.plan.toUpperCase();
   $("usage").textContent = "Использовано " + me.used + " из " + me.monthly_limit + " поисков в этом месяце";
   state.telegramConnected = Boolean(me.telegram_ready);
-  if (!me.telegram_ready) {
-    notify(me.telegram_api_ready
-      ? "Подключи Telegram-аккаунт в Radar, чтобы включить живой поиск."
-      : "Telegram API ещё не настроен.");
+
+  const sourceBadge = $("radarSourceBadge");
+  const sourceStatus = $("radarSourceStatus");
+  if (sourceBadge && sourceStatus) {
+    if (me.telemetr_ready) {
+      sourceBadge.textContent = "TELEMETR + WEB";
+      sourceBadge.classList.add("connected");
+      sourceStatus.textContent = "Основной поиск: Telemetr API. Публичный web-поиск используется как дополнительный источник.";
+    } else {
+      sourceBadge.textContent = "PUBLIC WEB";
+      sourceBadge.classList.remove("connected");
+      sourceStatus.textContent = "Radar уже работает через публичный web-поиск. Подключение Telemetr расширит покрытие и качество выдачи.";
+    }
   }
 }
 
