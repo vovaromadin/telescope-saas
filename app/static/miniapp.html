@@ -93,20 +93,12 @@
           <span id="tgConnectionBadge" class="connection-badge">...</span>
         </div>
         <div id="tgConnectionStatus" class="connection-status">Проверяю подключение…</div>
-        <form id="tgPhoneForm" class="row-form connection-form">
-          <input id="tgPhone" type="tel" autocomplete="tel" placeholder="+79991234567" required>
-          <button type="submit">Получить код</button>
-        </form>
-        <form id="tgCodeForm" class="row-form connection-form" hidden>
-          <input id="tgCode" inputmode="numeric" autocomplete="one-time-code" placeholder="Код из Telegram" required>
-          <button type="submit">Подтвердить</button>
-        </form>
-        <form id="tgPasswordForm" class="row-form connection-form" hidden>
-          <input id="tgPassword" type="password" autocomplete="current-password" placeholder="Пароль 2FA" required>
-          <button type="submit">Подключить</button>
-        </form>
-        <button id="tgDisconnect" type="button" class="ghost" hidden>Отключить аккаунт</button>
-        <p class="connection-note">Код и пароль не сохраняются. Авторизованная сессия хранится в Neon в зашифрованном виде.</p>
+        <div class="connection-actions">
+          <button id="tgQrStart" type="button">Подключить через Telegram</button>
+          <a id="tgQrLink" class="qr-link" href="#" hidden>Открыть подтверждение в Telegram</a>
+          <button id="tgDisconnect" type="button" class="ghost" hidden>Отключить аккаунт</button>
+        </div>
+        <p class="connection-note">TG Ракета не запрашивает код входа или пароль. Подтверждение выполняется в официальном Telegram; сессия хранится в Neon в зашифрованном виде.</p>
       </section>
 
       <section class="card">
