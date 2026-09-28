@@ -25,6 +25,10 @@ TGSTAT_USERNAME_RE = re.compile(
     r"(?:https?://)?(?:www\.)?tgstat\.(?:ru|com)/channel/(?:%40|@)?([A-Za-z0-9_]{5,32})(?:[/?#&\s\"'<>]|$)",
     re.IGNORECASE,
 )
+TGSTAT_RELATIVE_RE = re.compile(
+    r"(?:^|[\\\"'\s=])/(?:ru/)?channel/(?:%40|@)?([A-Za-z0-9_]{5,32})(?:[/?#&\\\"'\s<>]|$)",
+    re.IGNORECASE,
+)
 SKIP_USERNAMES = {
     "share", "iv", "addstickers", "proxy", "joinchat", "boost", "addemoji",
     "login", "blog", "apps", "addlist", "confirmphone", "setlanguage", "bg",
@@ -73,6 +77,7 @@ def extract_usernames_from_html(html: str) -> list[str]:
     decoded = unquote(html)
     candidates: list[str] = [match.group(1) for match in USERNAME_RE.finditer(decoded)]
     candidates.extend(match.group(1) for match in TGSTAT_USERNAME_RE.finditer(decoded))
+    candidates.extend(match.group(1) for match in TGSTAT_RELATIVE_RE.finditer(decoded))
 
     soup = BeautifulSoup(html, "html.parser")
     for anchor in soup.find_all("a", href=True):
@@ -83,6 +88,7 @@ def extract_usernames_from_html(html: str) -> list[str]:
         href = unquote(href)
         candidates.extend(match.group(1) for match in USERNAME_RE.finditer(href))
         candidates.extend(match.group(1) for match in TGSTAT_USERNAME_RE.finditer(href))
+        candidates.extend(match.group(1) for match in TGSTAT_RELATIVE_RE.finditer(href))
 
     out: list[str] = []
     seen: set[str] = set()
