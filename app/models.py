@@ -92,6 +92,19 @@ class CommunityResult(Base):
     search: Mapped[SearchRun] = relationship(back_populates="results")
 
 
+class TelegramConnection(Base):
+    __tablename__ = "telegram_connections"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="disconnected")
+    session_encrypted: Mapped[str] = mapped_column(Text, default="")
+    pending_session_encrypted: Mapped[str] = mapped_column(Text, default="")
+    pending_phone_encrypted: Mapped[str] = mapped_column(Text, default="")
+    pending_code_hash_encrypted: Mapped[str] = mapped_column(Text, default="")
+    display_name: Mapped[str] = mapped_column(String(220), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+
+
 class UsageEvent(Base):
     __tablename__ = "usage_events"
     id: Mapped[int] = mapped_column(primary_key=True)
