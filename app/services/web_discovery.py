@@ -167,6 +167,7 @@ class WebDiscovery:
     ) -> list[str]:
         search_queries = [
             f'site:t.me/s "{query}"',
+            f'site:tgstat.ru/channel "{query}" Telegram',
             f'"t.me/" "{query}" "Telegram"',
             f'"телеграм канал" "{query}"',
         ]
