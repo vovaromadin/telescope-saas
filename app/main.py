@@ -15,7 +15,8 @@ from app.config import get_settings
 from app.db import Base, SessionLocal, engine, get_db
 from app.models import Account, CommunityResult, Plan, Project, SearchRun, UsageEvent
 from app.schemas import ProjectCreate, ProjectOut, SearchCreate, SearchOut
-from app.miniapp import router as miniapp_router\nfrom app.growth import router as growth_router
+from app.miniapp import router as miniapp_router
+from app.growth import router as growth_router
 from app.security import require_admin
 from app.services.searches import execute_search
 
@@ -23,7 +24,8 @@ from app.services.searches import execute_search
 settings = get_settings()
 app = FastAPI(title=settings.app_name, version="0.2.0")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
-app.include_router(miniapp_router)\napp.include_router(growth_router)
+app.include_router(miniapp_router)
+app.include_router(growth_router)
 
 PLAN_LIMITS = {Plan.free: 5, Plan.pro: 100, Plan.team: 500}
 
