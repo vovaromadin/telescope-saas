@@ -62,33 +62,27 @@ async function refreshRadarSources() {
 
   try {
     const info = await api("/api/app/radar/status");
-    const active = ["WEB"];
-    const details = [];
+    const active = ["SEARCH-T.ME", "WEB"];
+    const details = ["Основной бесплатный каталог search-t.me активен"];
 
     if (info.tgstat_ok) {
       active.unshift("TGSTAT");
       details.push("TGStat API отвечает");
     } else if (info.tgstat_configured) {
-      details.push("TGStat: ключ есть, но тариф/доступ нужно проверить");
+      details.push("TGStat API настроен, но доступ ограничен тарифом или ключом");
     }
 
-    if (info.telemetr_ok) {
-      active.unshift("TELEMETR");
-      details.push("Telemetr API отвечает");
-    } else if (info.telemetr_configured) {
-      if (info.telemetr_status === "forbidden") details.push("Telemetr: ключ есть, каталог ограничен тарифом");
+    if (info.telemetr_configured) {
+      if (info.telemetr_status === "invalid_key") details.push("Telemetr: ключ не принят");
       else if (info.telemetr_status === "rate_limited") details.push("Telemetr: исчерпан лимит");
-      else if (info.telemetr_status === "invalid_key") details.push("Telemetr: ключ не принят");
-      else details.push("Telemetr: дополнительный источник сейчас недоступен");
+      else details.push("Telemetr подключён как дополнительный источник; trial может возвращать пустую выдачу");
     }
 
     sourceBadge.textContent = active.join(" + ");
-    sourceBadge.classList.toggle("connected", active.length > 1);
-    sourceStatus.textContent = details.length
-      ? details.join(". ") + ". Public web остаётся резервным источником."
-      : "Radar работает через публичный web-поиск. API-источники можно подключить дополнительно.";
+    sourceBadge.classList.add("connected");
+    sourceStatus.textContent = details.join(". ") + ".";
   } catch (error) {
-    sourceBadge.textContent = "WEB";
+    sourceBadge.textContent = "SEARCH-T.ME + WEB";
     sourceBadge.classList.remove("connected");
     sourceStatus.textContent = "Public web активен. Диагностика дополнительных источников временно недоступна.";
   }
