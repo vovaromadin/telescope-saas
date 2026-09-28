@@ -298,20 +298,25 @@ function renderResults(rows) {
       (r.referral_url ? '<a href="' + r.referral_url + '" target="_blank">ref link</a>' : "") +
       (r.max_referral_url ? '<a href="' + r.max_referral_url + '" target="_blank">MAX link</a>' : "");
     return '<article class="result"><div>' +
-      '<h3><a href="' + r.url + '" target="_blank" rel="noopener">' + escapeHtml(r.title) + '</a></h3>' +
+      '<h3>' + escapeHtml(r.title) + '</h3>' +
       '<div class="meta">' + escapeHtml(r.username) + ' · ' + escapeHtml(r.kind) + '</div>' +
       '<p class="desc">' + escapeHtml(r.description || "Описание не указано") + '</p>' +
       '<div class="chips"><span class="chip">' + Number(r.subscribers || 0).toLocaleString("ru-RU") + ' участников</span>' +
       '<span class="chip">релевантность ' + r.relevance_score + '</span>' +
       '<span class="chip">активность ' + r.activity_score + '</span>' + contacts + '</div>' +
-      '<div class="result-actions"><button type="button" class="ghost lead-add" data-row="' + index + '">+ CRM</button>' +
+      '<div class="result-actions">' +
+      '<button type="button" class="ghost lead-add" data-row="' + index + '">+ CRM</button>' +
+      '<button type="button" class="ghost channel-open" data-row="' + index + '">Открыть канал</button>' +
       '<div class="links">' + links + '</div></div></div>' +
       '<div class="score">' + Math.round(r.total_score || 0) + '</div></article>';
   }).join("");
 
   document.querySelectorAll(".lead-add").forEach(function(button) {
-    button.onclick = async function() {
+    button.onclick = async function(event) {
+      event.preventDefault();
+      event.stopPropagation();
       const row = rows[Number(button.dataset.row)];
+      button.disabled = true;
       try {
         await api("/api/app/growth/projects/" + state.projectId + "/leads", {
           method:"POST",
@@ -326,10 +331,28 @@ function renderResults(rows) {
           })
         });
         button.textContent = "В CRM ✓";
-        button.disabled = true;
+        await refreshOverview();
+        setView("leads");
       } catch (error) {
+        button.disabled = false;
         notify(error.message);
       }
+      return false;
+    };
+  });
+
+  document.querySelectorAll(".channel-open").forEach(function(button) {
+    button.onclick = function(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      const row = rows[Number(button.dataset.row)];
+      if (!row || !row.url) return false;
+      if (tg && typeof tg.openTelegramLink === "function" && row.url.indexOf("https://t.me/") === 0) {
+        tg.openTelegramLink(row.url);
+      } else {
+        window.open(row.url, "_blank", "noopener");
+      }
+      return false;
     };
   });
 }
