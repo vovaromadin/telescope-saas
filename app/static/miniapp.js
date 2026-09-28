@@ -316,7 +316,9 @@ function renderResults(rows) {
       event.preventDefault();
       event.stopPropagation();
       const row = rows[Number(button.dataset.row)];
+      const originalText = button.textContent;
       button.disabled = true;
+      button.textContent = "Добавляю…";
       try {
         await api("/api/app/growth/projects/" + state.projectId + "/leads", {
           method:"POST",
@@ -331,10 +333,12 @@ function renderResults(rows) {
           })
         });
         button.textContent = "В CRM ✓";
-        await refreshOverview();
+        if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
         setView("leads");
+        refreshOverview();
       } catch (error) {
         button.disabled = false;
+        button.textContent = originalText;
         notify(error.message);
       }
       return false;
