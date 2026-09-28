@@ -63,23 +63,29 @@ def parse_card(anchor, query: str) -> WebCommunity | None:
 
     # The card ends with audience/interaction metadata and "Open".
     remainder = re.sub(r"\s+Open(?:\s+.*)?$", "", remainder, flags=re.IGNORECASE)
-    count_matches = list(
-        re.finditer(r"(\d+(?:[\s.,]\d+)*)\s*(K|M|К|М|тыс\.?|млн\.?)?", remainder, re.IGNORECASE)
-    )
-    subscribers = 0
-    if count_matches:
-        candidates = []
-        for match in count_matches:
-            value = parse_human_count(match.group(0))
-            suffix = (match.group(2) or "").strip()
-            # Ignore phone numbers, timestamps and other large numbers from descriptions.
-            # Audience counts without a suffix above 200M are not credible Telegram channel counts.
-            if value <= 0:
-                continue
-            if not suffix and value > 200_000_000:
-                continue
-            candidates.append(min(value, 2_000_000_000))
-        subscribers = max(candidates, default=0)
+
+    # Prefer compact audience values such as 348.6K / 1.2M.
+    # Do not let service IDs, phone numbers or handles like @vr777 merge with them.
+    suffixed_counts = []
+    for match in re.finditer(
+        r"(?<![\d.,])([0-9]{1,6}(?:[.,][0-9]{1,2})?)\s*(K|M|К|М|тыс\.?|млн\.?)\b",
+        remainder,
+        re.IGNORECASE,
+    ):
+        value = parse_human_count(match.group(0))
+        if 0 < value <= 200_000_000:
+            suffixed_counts.append(value)
+
+    if suffixed_counts:
+        subscribers = max(suffixed_counts)
+    else:
+        # Fallback for plain counts: only accept standalone realistic values.
+        plain_counts = []
+        for match in re.finditer(r"(?<!\d)(\d{3,9})(?!\d)", remainder):
+            value = int(match.group(1))
+            if 100 <= value <= 200_000_000:
+                plain_counts.append(value)
+        subscribers = max(plain_counts, default=0)
 
     description = remainder
     scores = score_community(
