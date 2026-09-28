@@ -54,11 +54,12 @@ async def startup() -> None:
         if not db.scalar(select(Account).limit(1)):
             db.add(Account(name="Default workspace", plan=Plan.free))
             db.commit()
-    try:
-        await configure_telegram_webhook()
-    except httpx.HTTPError:
-        # Keep the app available even if Telegram is temporarily unreachable.
-        pass
+    if settings.tg_bot_token:
+        try:
+            await configure_telegram_webhook()
+            print(f"Telegram webhook configured for @{settings.tg_bot_username or 'bot'}", flush=True)
+        except httpx.HTTPError as exc:
+            print(f"Telegram webhook configuration failed: {type(exc).__name__}", flush=True)
 
 
 @app.get("/", response_class=HTMLResponse)
