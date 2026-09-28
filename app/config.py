@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    app_name: str = "TeleScope"
+    app_name: str = "TG Market Radar"
     app_env: str = "development"
     public_base_url: str = "http://localhost:8000"
     database_url: str = "sqlite:///./telescope.db"
