@@ -8,7 +8,11 @@ import httpx
 from app.services.web_discovery import USER_AGENT, WebCommunity, WebDiscovery
 
 
-CARD_RE = re.compile(r'href=["\']/c/([A-Za-z0-9_]{5,32})', re.IGNORECASE)
+CARD_RE = re.compile(
+    r'(?:https?://(?:www\.)?open\.tg)?/c/([A-Za-z0-9_]{5,32})',
+    re.IGNORECASE,
+)
+VISIBLE_HANDLE_RE = re.compile(r'@([A-Za-z0-9_]{5,32})')
 
 
 def pick_category(query: str) -> str:
@@ -63,13 +67,15 @@ class OpenTGDiscovery:
             usernames: list[str] = []
             seen: set[str] = set()
             for html in pages:
-                for raw in CARD_RE.findall(html):
+                candidates = list(CARD_RE.findall(html))
+                candidates.extend(VISIBLE_HANDLE_RE.findall(html))
+                for raw in candidates:
                     key = raw.casefold()
                     if key in seen or key.endswith("bot"):
                         continue
                     seen.add(key)
                     usernames.append(raw)
-                    if len(usernames) >= max(40, limit * 4):
+                    if len(usernames) >= max(80, limit * 8):
                         break
 
             if not usernames:
@@ -82,7 +88,7 @@ class OpenTGDiscovery:
                 async with semaphore:
                     return await analyzer._analyze(client, username, query)
 
-            rows = await asyncio.gather(*(analyze(username) for username in usernames[: max(40, limit * 4)]))
+            rows = await asyncio.gather(*(analyze(username) for username in usernames[: max(80, limit * 8)]))
 
         out = [row for row in rows if row is not None]
         # Keep useful topic matches first, but do not discard broad category candidates entirely.
