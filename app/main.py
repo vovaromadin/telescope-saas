@@ -1,3 +1,4 @@
+import asyncio
 import csv
 import io
 import json
@@ -19,6 +20,9 @@ from app.miniapp import router as miniapp_router
 from app.growth import router as growth_router
 from app.security import require_admin
 from app.services.searches import execute_search
+from app.services.telemetr_discovery import TelemetrDiscovery
+from app.services.tgstat_discovery import TGStatDiscovery
+from app.services.web_discovery import WebDiscovery
 
 
 settings = get_settings()
@@ -82,6 +86,44 @@ def dashboard() -> str:
 def mini_app() -> str:
     with open("app/static/miniapp.html", encoding="utf-8") as handle:
         return handle.read()
+
+
+@app.get("/health/radar")
+async def radar_health() -> dict:
+    query = "ставки футбол"
+    result = {
+        "query": query,
+        "telemetr": {"configured": bool(settings.telemetr_api_key), "count": 0, "error": None},
+        "tgstat": {"configured": bool(settings.tgstat_api_token), "count": 0, "error": None},
+        "public_web": {"configured": True, "count": 0, "error": None},
+    }
+
+    async def run_source(name: str, coro) -> None:
+        try:
+            rows = await coro
+            result[name]["count"] = len(rows)
+        except Exception as exc:
+            result[name]["error"] = f"{type(exc).__name__}: {str(exc)[:180]}"
+
+    tasks = [
+        run_source("public_web", WebDiscovery().search(query, 10)),
+    ]
+    if settings.telemetr_api_key:
+        tasks.append(run_source("telemetr", TelemetrDiscovery(settings.telemetr_api_key).search(query, 10)))
+    if settings.tgstat_api_token:
+        tasks.append(
+            run_source(
+                "tgstat",
+                TGStatDiscovery(
+                    settings.tgstat_api_token,
+                    settings.tgstat_country,
+                    settings.tgstat_language,
+                ).search(query, 10),
+            )
+        )
+
+    await asyncio.gather(*tasks)
+    return result
 
 
 @app.get("/health")
