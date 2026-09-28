@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>TeleScope</title>
+  <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
+  <link rel="stylesheet" href="/static/miniapp.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <div class="eyebrow">TELEGRAM AUDIENCE INTELLIGENCE</div>
+        <h1>TeleScope</h1>
+        <p>Ищи публичные каналы и группы по любым нишам, оценивай активность и находи открытые рекламные контакты.</p>
+      </div>
+      <div id="planBadge" class="plan">...</div>
+    </header>
+
+    <section id="authError" class="notice danger" hidden></section>
+
+    <section class="card">
+      <div class="section-head">
+        <div>
+          <h2>Проекты</h2>
+          <p>Разделяй ниши и клиентов по отдельным проектам.</p>
+        </div>
+      </div>
+      <form id="projectForm" class="row-form">
+        <input id="projectName" maxlength="160" placeholder="Например: Автосервисы Москва" required>
+        <button type="submit">Создать</button>
+      </form>
+      <div id="projects" class="projects"></div>
+    </section>
+
+    <section class="card">
+      <div class="section-head">
+        <div>
+          <h2>Новый поиск</h2>
+          <p id="usage">Загрузка лимитов…</p>
+        </div>
+      </div>
+      <form id="searchForm">
+        <textarea id="query" maxlength="300" rows="3" placeholder="Например: детейлинг Москва, ставки на футбол, продажа недвижимости Дубай" required></textarea>
+        <button id="searchButton" class="primary" type="submit">Найти аудиторию</button>
+      </form>
+      <div id="status" class="status"></div>
+    </section>
+
+    <section id="toolbar" class="toolbar" hidden>
+      <strong id="count">Найдено: 0</strong>
+      <div>
+        <button id="csv" class="ghost" type="button">CSV</button>
+        <button id="json" class="ghost" type="button">JSON</button>
+      </div>
+    </section>
+
+    <section id="results" class="results"></section>
+
+    <section class="card pricing">
+      <div class="section-head">
+        <div>
+          <h2>Тарифы</h2>
+          <p>Начни бесплатно, увеличивай лимит по мере роста.</p>
+        </div>
+      </div>
+      <div class="plans">
+        <div class="price"><b>Free</b><span>5 поисков / мес.</span></div>
+        <button data-plan="pro" class="price action"><b>Pro</b><span>100 поисков / мес.</span></button>
+        <button data-plan="team" class="price action"><b>Team</b><span>500 поисков / мес.</span></button>
+      </div>
+    </section>
+
+    <footer>Только публичные сообщества и явно опубликованные рекламные контакты.</footer>
+  </main>
+  <script src="/static/miniapp.js"></script>
+</body>
+</html>
