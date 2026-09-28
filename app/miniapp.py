@@ -1,19 +1,26 @@
 from __future__ import annotations
 
+import base64
 import csv
+import hashlib
 import io
 import json
 from datetime import datetime, timezone
 
 import stripe
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
+from pydantic import BaseModel
+from telethon import TelegramClient
+from telethon.errors import FloodWaitError, PasswordHashInvalidError, PhoneCodeExpiredError, PhoneCodeInvalidError, PhoneNumberBannedError, PhoneNumberInvalidError, SessionPasswordNeededError
+from telethon.sessions import StringSession
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import SessionLocal, get_db
-from app.models import Account, CommunityResult, Plan, Project, SearchRun, UsageEvent
+from app.models import Account, CommunityResult, Plan, Project, SearchRun, TelegramConnection, UsageEvent
 from app.schemas import ProjectCreate, SearchCreate
 from app.security import validate_telegram_init_data
 from app.services.searches import execute_search
@@ -22,6 +29,50 @@ from app.services.searches import execute_search
 router = APIRouter(prefix="/api/app", tags=["miniapp"])
 settings = get_settings()
 PLAN_LIMITS = {Plan.free: 5, Plan.pro: 100, Plan.team: 500}
+
+
+class TelegramPhonePayload(BaseModel):
+    phone: str
+
+
+class TelegramCodePayload(BaseModel):
+    code: str
+
+
+class TelegramPasswordPayload(BaseModel):
+    password: str
+
+
+def _fernet() -> Fernet:
+    digest = hashlib.sha256(f"{settings.admin_api_key}:tg-raketa-session".encode("utf-8")).digest()
+    return Fernet(base64.urlsafe_b64encode(digest))
+
+
+def encrypt_secret(value: str) -> str:
+    return _fernet().encrypt(value.encode("utf-8")).decode("ascii") if value else ""
+
+
+def decrypt_secret(value: str) -> str:
+    if not value:
+        return ""
+    try:
+        return _fernet().decrypt(value.encode("ascii")).decode("utf-8")
+    except InvalidToken as exc:
+        raise HTTPException(500, "Не удалось расшифровать Telegram-сессию") from exc
+
+
+def account_telegram_connection(db: Session, account_id: int) -> TelegramConnection | None:
+    return db.scalar(select(TelegramConnection).where(TelegramConnection.account_id == account_id))
+
+
+def telegram_display_name(me) -> str:
+    first = (getattr(me, "first_name", "") or "").strip()
+    last = (getattr(me, "last_name", "") or "").strip()
+    username = (getattr(me, "username", "") or "").strip()
+    name = " ".join(part for part in (first, last) if part).strip()
+    if username:
+        name = f"{name} (@{username})".strip()
+    return name or "Telegram account"
 
 
 def monthly_used(db: Session, account: Account) -> int:
@@ -110,14 +161,22 @@ def serialize_result(row: CommunityResult) -> dict:
 async def run_search_background(run_id: int, referral_prefix: str, limit: int) -> None:
     with SessionLocal() as db:
         run = db.get(SearchRun, run_id)
-        if run:
-            await execute_search(db, run, referral_prefix, limit)
+        if not run:
+            return
+        project = db.get(Project, run.project_id)
+        connection = account_telegram_connection(db, project.account_id) if project else None
+        telegram_session = ""
+        if connection and connection.status == "connected" and connection.session_encrypted:
+            telegram_session = decrypt_secret(connection.session_encrypted)
+        await execute_search(db, run, referral_prefix, limit, telegram_session=telegram_session or None)
 
 
 @router.get("/me")
 def me(account: Account = Depends(current_account), db: Session = Depends(get_db)) -> dict:
     used = monthly_used(db, account)
     limit = PLAN_LIMITS[account.plan]
+    connection = account_telegram_connection(db, account.id)
+    connected = bool(connection and connection.status == "connected" and connection.session_encrypted)
     return {
         "id": account.id,
         "name": account.name,
@@ -125,8 +184,151 @@ def me(account: Account = Depends(current_account), db: Session = Depends(get_db
         "monthly_limit": limit,
         "used": used,
         "remaining": max(0, limit - used),
-        "telegram_ready": settings.telegram_ready,
+        "telegram_ready": connected or settings.telegram_ready,
+        "telegram_api_ready": bool(settings.tg_api_id and settings.tg_api_hash),
     }
+
+
+@router.get("/telegram/connection")
+def telegram_connection_status(
+    account: Account = Depends(current_account),
+    db: Session = Depends(get_db),
+) -> dict:
+    connection = account_telegram_connection(db, account.id)
+    return {
+        "api_ready": bool(settings.tg_api_id and settings.tg_api_hash),
+        "connected": bool(connection and connection.status == "connected" and connection.session_encrypted),
+        "status": connection.status if connection else "disconnected",
+        "display_name": connection.display_name if connection else "",
+    }
+
+
+@router.post("/telegram/connect/start")
+async def telegram_connect_start(
+    payload: TelegramPhonePayload,
+    account: Account = Depends(current_account),
+    db: Session = Depends(get_db),
+) -> dict:
+    if not settings.tg_api_id or not settings.tg_api_hash:
+        raise HTTPException(503, "TG_API_ID и TG_API_HASH ещё не настроены")
+    phone = payload.phone.strip().replace(" ", "").replace("-", "")
+    if len(phone) < 8:
+        raise HTTPException(400, "Укажи номер в международном формате, например +79991234567")
+
+    connection = account_telegram_connection(db, account.id)
+    if not connection:
+        connection = TelegramConnection(account_id=account.id)
+        db.add(connection)
+
+    client = TelegramClient(StringSession(), settings.tg_api_id, settings.tg_api_hash)
+    await client.connect()
+    try:
+        sent = await client.send_code_request(phone)
+        connection.status = "code_sent"
+        connection.pending_session_encrypted = encrypt_secret(client.session.save())
+        connection.pending_phone_encrypted = encrypt_secret(phone)
+        connection.pending_code_hash_encrypted = encrypt_secret(sent.phone_code_hash)
+        db.commit()
+        return {"status": "code_sent"}
+    except PhoneNumberInvalidError as exc:
+        raise HTTPException(400, "Telegram не принимает этот номер телефона") from exc
+    except PhoneNumberBannedError as exc:
+        raise HTTPException(400, "Этот Telegram-номер заблокирован") from exc
+    except FloodWaitError as exc:
+        raise HTTPException(429, f"Telegram просит подождать {exc.seconds} сек.") from exc
+    finally:
+        await client.disconnect()
+
+
+@router.post("/telegram/connect/code")
+async def telegram_connect_code(
+    payload: TelegramCodePayload,
+    account: Account = Depends(current_account),
+    db: Session = Depends(get_db),
+) -> dict:
+    connection = account_telegram_connection(db, account.id)
+    if not connection or not connection.pending_session_encrypted:
+        raise HTTPException(400, "Сначала запроси код Telegram")
+
+    session_value = decrypt_secret(connection.pending_session_encrypted)
+    phone = decrypt_secret(connection.pending_phone_encrypted)
+    phone_code_hash = decrypt_secret(connection.pending_code_hash_encrypted)
+    code = payload.code.strip().replace(" ", "")
+    client = TelegramClient(StringSession(session_value), settings.tg_api_id, settings.tg_api_hash)
+    await client.connect()
+    try:
+        try:
+            await client.sign_in(phone=phone, code=code, phone_code_hash=phone_code_hash)
+        except SessionPasswordNeededError:
+            connection.status = "password_required"
+            connection.pending_session_encrypted = encrypt_secret(client.session.save())
+            db.commit()
+            return {"status": "password_required", "requires_password": True}
+        me = await client.get_me()
+        connection.status = "connected"
+        connection.session_encrypted = encrypt_secret(client.session.save())
+        connection.pending_session_encrypted = ""
+        connection.pending_phone_encrypted = ""
+        connection.pending_code_hash_encrypted = ""
+        connection.display_name = telegram_display_name(me)
+        db.commit()
+        return {"status": "connected", "display_name": connection.display_name}
+    except PhoneCodeInvalidError as exc:
+        raise HTTPException(400, "Неверный код Telegram") from exc
+    except PhoneCodeExpiredError as exc:
+        raise HTTPException(400, "Код Telegram истёк. Запроси новый") from exc
+    finally:
+        await client.disconnect()
+
+
+@router.post("/telegram/connect/password")
+async def telegram_connect_password(
+    payload: TelegramPasswordPayload,
+    account: Account = Depends(current_account),
+    db: Session = Depends(get_db),
+) -> dict:
+    connection = account_telegram_connection(db, account.id)
+    if not connection or connection.status != "password_required" or not connection.pending_session_encrypted:
+        raise HTTPException(400, "Сначала подтверди код Telegram")
+
+    client = TelegramClient(
+        StringSession(decrypt_secret(connection.pending_session_encrypted)),
+        settings.tg_api_id,
+        settings.tg_api_hash,
+    )
+    await client.connect()
+    try:
+        await client.sign_in(password=payload.password)
+        me = await client.get_me()
+        connection.status = "connected"
+        connection.session_encrypted = encrypt_secret(client.session.save())
+        connection.pending_session_encrypted = ""
+        connection.pending_phone_encrypted = ""
+        connection.pending_code_hash_encrypted = ""
+        connection.display_name = telegram_display_name(me)
+        db.commit()
+        return {"status": "connected", "display_name": connection.display_name}
+    except PasswordHashInvalidError as exc:
+        raise HTTPException(400, "Неверный пароль двухэтапной аутентификации") from exc
+    finally:
+        await client.disconnect()
+
+
+@router.delete("/telegram/connection")
+def telegram_disconnect(
+    account: Account = Depends(current_account),
+    db: Session = Depends(get_db),
+) -> dict:
+    connection = account_telegram_connection(db, account.id)
+    if connection:
+        connection.status = "disconnected"
+        connection.session_encrypted = ""
+        connection.pending_session_encrypted = ""
+        connection.pending_phone_encrypted = ""
+        connection.pending_code_hash_encrypted = ""
+        connection.display_name = ""
+        db.commit()
+    return {"status": "disconnected"}
 
 
 @router.get("/projects")
