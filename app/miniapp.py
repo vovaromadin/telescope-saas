@@ -189,6 +189,62 @@ def me(account: Account = Depends(current_account), db: Session = Depends(get_db
     }
 
 
+@router.get("/radar/status")
+async def radar_status(
+    account: Account = Depends(current_account),
+) -> dict:
+    result = {
+        "telemetr_configured": bool(settings.telemetr_api_key),
+        "telemetr_ok": False,
+        "telemetr_status": "not_configured",
+        "telemetr_limits": None,
+        "public_web": True,
+    }
+    if not settings.telemetr_api_key:
+        return result
+
+    headers = {
+        "Authorization": f"Bearer {settings.telemetr_api_key}",
+        "Accept": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(headers=headers, timeout=12) as client:
+            response = await client.get("https://api.telemetr.me/v1/limits")
+        result["telemetr_http_status"] = response.status_code
+        if response.status_code == 200:
+            result["telemetr_ok"] = True
+            result["telemetr_status"] = "ok"
+            payload = response.json()
+            if isinstance(payload, dict):
+                safe = {
+                    "model": payload.get("model"),
+                    "platform": payload.get("platform"),
+                    "requests": payload.get("requests"),
+                    "channels": payload.get("channels"),
+                    "search": payload.get("search"),
+                    "posts": payload.get("posts"),
+                    "lifetime": payload.get("lifetime"),
+                }
+                result["telemetr_limits"] = safe
+        elif response.status_code == 401:
+            result["telemetr_status"] = "invalid_key"
+        elif response.status_code == 403:
+            result["telemetr_status"] = "forbidden"
+            try:
+                payload = response.json()
+                result["telemetr_error"] = payload
+            except Exception:
+                pass
+        elif response.status_code == 429:
+            result["telemetr_status"] = "rate_limited"
+        else:
+            result["telemetr_status"] = "error"
+    except Exception as exc:
+        result["telemetr_status"] = "unreachable"
+        result["telemetr_error"] = type(exc).__name__
+    return result
+
+
 @router.get("/telegram/connection")
 def telegram_connection_status(
     account: Account = Depends(current_account),
