@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light dark">
   <title>TG Ракета</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/static/miniapp.css?v=growth-os-10">
+  <link rel="stylesheet" href="/static/miniapp.css?v=growth-os-11">
 </head>
 <body>
   <main class="shell">
@@ -61,11 +61,18 @@
           </div>
         </div>
         <div class="pipeline">
-          <div><b>1</b><span>Radar</span><small>найти публичные площадки</small></div>
-          <div><b>2</b><span>CRM</span><small>сохранить релевантные лиды</small></div>
-          <div><b>3</b><span>Контент</span><small>подготовить публикации и ответы</small></div>
-          <div><b>4</b><span>Кампании</span><small>запустить и отслеживать</small></div>
+          <button type="button" data-go-view="radar"><b>1</b><span>Radar</span><small>найти публичные площадки</small></button>
+          <button type="button" data-go-view="leads"><b>2</b><span>CRM</span><small>сохранить релевантные лиды</small></button>
+          <button type="button" data-go-view="content"><b>3</b><span>Контент</span><small>подготовить публикации и ответы</small></button>
+          <button type="button" data-go-view="campaigns"><b>4</b><span>Кампании</span><small>запустить и отслеживать</small></button>
         </div>
+      </section>
+
+      <section class="card next-action-card">
+        <div class="eyebrow">СЛЕДУЮЩИЙ ШАГ</div>
+        <h2 id="nextActionTitle">Проверяю проект…</h2>
+        <p id="nextActionText">TG Ракета подскажет, что логичнее сделать дальше.</p>
+        <button id="nextActionButton" type="button" class="primary">Перейти</button>
       </section>
 
       <section class="card pricing">
@@ -201,7 +208,11 @@
             </select>
           </div>
           <textarea id="contentBody" maxlength="20000" rows="5" placeholder="Текст материала"></textarea>
-          <button type="submit">Сохранить черновик</button>
+          <div class="form-grid">
+            <input id="contentSchedule" type="datetime-local" aria-label="Дата и время публикации">
+            <button id="contentPreview" type="button" class="ghost">Предпросмотр</button>
+          </div>
+          <button type="submit">Сохранить</button>
         </form>
       </section>
       <section id="contentList" class="list"></section>
@@ -246,6 +257,6 @@
 
     <footer>Публичные сообщества, авторизованные аккаунты и согласованные коммуникации. Без массовых незапрошенных ЛС.</footer>
   </main>
-  <script src="/static/miniapp.js?v=growth-os-10"></script>
+  <script src="/static/miniapp.js?v=growth-os-11"></script>
 </body>
 </html>
