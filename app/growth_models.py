@@ -15,6 +15,7 @@ class LeadStatus(str, enum.Enum):
     new = "new"
     qualified = "qualified"
     contacted = "contacted"
+    negotiation = "negotiation"
     won = "won"
     lost = "lost"
     snoozed = "snoozed"
