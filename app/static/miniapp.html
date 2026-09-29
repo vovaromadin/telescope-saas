@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light dark">
   <title>TG Ракета</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/static/miniapp.css?v=radar-layout-5">
+  <link rel="stylesheet" href="/static/miniapp.css?v=growth-os-6">
 </head>
 <body>
   <main class="shell">
@@ -98,6 +98,18 @@
           <button id="searchButton" class="primary" type="submit">Найти аудиторию</button>
         </form>
         <div id="status" class="status"></div>
+        <div class="saved-search-row">
+          <button id="saveSearch" type="button" class="ghost">Сохранить поиск</button>
+          <div id="savedSearches" class="saved-searches"></div>
+        </div>
+      </section>
+      <section class="card radar-controls">
+        <div class="control-grid">
+          <select id="radarSort"><option value="score">Лучшее совпадение</option><option value="activity">Активность</option><option value="audience">Аудитория</option><option value="views">Просмотры</option></select>
+          <select id="radarMinScore"><option value="0">Любой рейтинг</option><option value="50">Рейтинг от 50</option><option value="65">Рейтинг от 65</option><option value="75">Рейтинг от 75</option></select>
+          <select id="radarMinAudience"><option value="0">Любая аудитория</option><option value="1000">От 1 000</option><option value="10000">От 10 000</option><option value="50000">От 50 000</option></select>
+        </div>
+        <div class="check-row"><label><input id="radarFavoritesOnly" type="checkbox"> Только ★ избранное</label></div>
       </section>
 
       <details class="card connection-card advanced-source">
@@ -198,6 +210,6 @@
 
     <footer>Публичные сообщества, авторизованные аккаунты и согласованные коммуникации. Без массовых незапрошенных ЛС.</footer>
   </main>
-  <script src="/static/miniapp.js?v=radar-layout-5"></script>
+  <script src="/static/miniapp.js?v=growth-os-6"></script>
 </body>
 </html>
