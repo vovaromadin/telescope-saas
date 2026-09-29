@@ -30,6 +30,7 @@ from app.models import Account, CommunityResult, Plan, Project, SearchRun, Teleg
 from app.schemas import ProjectCreate, SearchCreate
 from app.security import validate_telegram_init_data
 from app.services.searches import execute_search
+from app.services.web_discovery import WebDiscovery
 
 
 router = APIRouter(prefix="/api/app", tags=["miniapp"])
@@ -102,7 +103,13 @@ def current_account(
     # Browser dashboard fallback for the owner. Telegram Mini App keeps using
     # signed initData; the web dashboard may use the existing ADMIN_API_KEY.
     if x_api_key and hmac.compare_digest(x_api_key, settings.admin_api_key):
-        account = db.scalar(select(Account).order_by(Account.id))
+        account = db.scalar(
+            select(Account)
+            .where(Account.telegram_id.is_not(None))
+            .order_by(Account.id.desc())
+        )
+        if not account:
+            account = db.scalar(select(Account).order_by(Account.id))
         if not account:
             raise HTTPException(500, "No workspace configured")
         return account
@@ -284,6 +291,64 @@ async def radar_status(
                 result["telemetr_error"] = type(exc).__name__
 
     return result
+
+
+@router.get("/radar/analyze")
+async def radar_analyze(
+    username: str,
+    query: str = "",
+    account: Account = Depends(current_account),
+) -> dict:
+    row = await WebDiscovery().analyze_channel(username, query)
+    if not row:
+        raise HTTPException(404, "Не удалось получить публичные данные канала")
+
+    er = round((row.avg_views / row.subscribers * 100), 1) if row.subscribers > 0 and row.avg_views > 0 else 0.0
+    reasons = []
+    if row.relevance_score >= 70:
+        reasons.append("высокое тематическое совпадение")
+    elif row.relevance_score >= 45:
+        reasons.append("среднее тематическое совпадение")
+    else:
+        reasons.append("совпадение по теме ограниченное")
+
+    if row.messages_30d >= 20:
+        reasons.append("канал публикуется регулярно")
+    elif row.messages_30d > 0:
+        reasons.append("канал активен, но публикуется умеренно")
+    else:
+        reasons.append("свежая активность не подтверждена")
+
+    if row.avg_views > 0:
+        reasons.append(f"средние просмотры около {int(row.avg_views):,}".replace(",", " "))
+
+    if row.public_contacts:
+        reasons.append("есть публичный контакт для сотрудничества")
+
+    if row.relevance_score >= 65 and row.messages_30d >= 10:
+        recommendation = "Подходит для шорт-листа. Сначала запросить условия размещения и сверить свежие охваты."
+    elif row.relevance_score >= 45:
+        recommendation = "Можно рассматривать как тестовую площадку после ручной проверки последних публикаций."
+    else:
+        recommendation = "Низкий приоритет: использовать только после дополнительной ручной проверки."
+
+    return {
+        "username": f"@{row.username}",
+        "title": row.title,
+        "url": row.url,
+        "subscribers": row.subscribers,
+        "messages_30d": row.messages_30d,
+        "avg_views": row.avg_views,
+        "estimated_er": er,
+        "relevance_score": row.relevance_score,
+        "activity_score": row.activity_score,
+        "audience_score": row.audience_score,
+        "total_score": row.total_score,
+        "public_contacts": row.public_contacts,
+        "snippets": row.snippets[:5],
+        "why": ". ".join(reasons).capitalize() + ".",
+        "recommendation": recommendation,
+    }
 
 
 @router.get("/telegram/connection")
