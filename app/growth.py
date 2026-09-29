@@ -283,6 +283,18 @@ def patch_lead(
     return _lead(row)
 
 
+@router.delete("/leads/{lead_id}")
+def delete_lead(
+    lead_id: int,
+    account: Account = Depends(current_account),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = _owned_row(db, account, Lead, lead_id)
+    db.delete(row)
+    db.commit()
+    return {"ok": True, "id": lead_id}
+
+
 @router.get("/projects/{project_id}/content")
 def list_content(
     project_id: int,
@@ -333,6 +345,18 @@ def patch_content(
     return _content(row)
 
 
+@router.delete("/content/{content_id}")
+def delete_content(
+    content_id: int,
+    account: Account = Depends(current_account),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = _owned_row(db, account, ContentItem, content_id)
+    db.delete(row)
+    db.commit()
+    return {"ok": True, "id": content_id}
+
+
 @router.get("/projects/{project_id}/campaigns")
 def list_campaigns(
     project_id: int,
@@ -374,6 +398,18 @@ def patch_campaign(
     db.commit()
     db.refresh(row)
     return _campaign(row)
+
+
+@router.delete("/campaigns/{campaign_id}")
+def delete_campaign(
+    campaign_id: int,
+    account: Account = Depends(current_account),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = _owned_row(db, account, Campaign, campaign_id)
+    db.delete(row)
+    db.commit()
+    return {"ok": True, "id": campaign_id}
 
 
 @router.post("/projects/{project_id}/events")
