@@ -422,13 +422,94 @@ function filteredRadarRows() {
 
 function applyRadarFilters() {
   const rows = filteredRadarRows();
-  renderResults(rows);
+  const signalMode = $("radarViewMode").value === "signals";
+  const signalCount = signalMode ? renderSignals(rows) : null;
+  if (!signalMode) renderResults(rows);
   if (state.lastRows.length) {
-    $("count").textContent = rows.length === state.lastRows.length
-      ? "Найдено: " + rows.length
-      : "Показано: " + rows.length + " из " + state.lastRows.length;
+    $("count").textContent = signalMode
+      ? "Сигналов: " + signalCount
+      : rows.length === state.lastRows.length
+        ? "Найдено: " + rows.length
+        : "Показано: " + rows.length + " из " + state.lastRows.length;
     $("toolbar").hidden = false;
   }
+}
+
+async function addRadarRowToCrm(row, button) {
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = "Добавляю…";
+  try {
+    await api("/api/app/growth/projects/" + state.projectId + "/leads", {
+      method:"POST",
+      body:JSON.stringify({
+        display_name:row.title || row.username || "Telegram lead",
+        source:"radar",
+        source_url:row.url || "",
+        username:String(row.username || "").replace(/^@/, ""),
+        public_contact:(row.public_contacts || [])[0] || "",
+        intent_score:Math.max(0, Math.min(100, Number(row.total_score || 0))),
+        note:"Добавлен из TG Radar"
+      })
+    });
+    button.textContent = "В CRM ✓";
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
+    state.crmAddedCount += 1;
+    const crmJump = $("crmJump");
+    const crmJumpCount = $("crmJumpCount");
+    if (crmJump && crmJumpCount) {
+      crmJumpCount.textContent = state.crmAddedCount;
+      crmJump.hidden = state.activeView !== "radar";
+    }
+    refreshOverview();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = originalText;
+    notify(error.message);
+  }
+}
+
+function openRadarRow(row) {
+  if (!row || !row.url) return;
+  if (tg && typeof tg.openTelegramLink === "function" && row.url.indexOf("https://t.me/") === 0) {
+    tg.openTelegramLink(row.url);
+  } else {
+    window.open(row.url, "_blank", "noopener");
+  }
+}
+
+function renderSignals(rows) {
+  const signals = [];
+  rows.forEach(function(row) {
+    (row.matched_snippets || []).slice(0, 3).forEach(function(snippet) {
+      if (snippet) signals.push({row:row, snippet:snippet});
+    });
+  });
+
+  $("results").innerHTML = signals.length ? signals.map(function(item, index) {
+    return '<article class="signal-card">' +
+      '<div class="signal-head"><div><b>' + escapeHtml(item.row.title) + '</b><div class="meta">' + escapeHtml(item.row.username) + '</div></div>' +
+      '<span class="chip">score ' + Math.round(Number(item.row.total_score || 0)) + '</span></div>' +
+      '<p>' + escapeHtml(item.snippet) + '</p>' +
+      '<div class="result-actions">' +
+      '<button type="button" class="ghost signal-add" data-index="' + index + '">+ CRM</button>' +
+      '<button type="button" class="ghost signal-open" data-index="' + index + '">Открыть канал</button>' +
+      '</div></article>';
+  }).join("") : '<div class="empty">В этих результатах пока нет публичных совпадений из свежих постов. Попробуй другой запрос или открой режим «Каналы».</div>';
+
+  document.querySelectorAll(".signal-add").forEach(function(button) {
+    button.onclick = function() {
+      const item = signals[Number(button.dataset.index)];
+      if (item) addRadarRowToCrm(item.row, button);
+    };
+  });
+  document.querySelectorAll(".signal-open").forEach(function(button) {
+    button.onclick = function() {
+      const item = signals[Number(button.dataset.index)];
+      if (item) openRadarRow(item.row);
+    };
+  });
+  return signals.length;
 }
 
 function renderResults(rows) {
@@ -508,41 +589,11 @@ function renderResults(rows) {
   });
 
   document.querySelectorAll(".lead-add").forEach(function(button) {
-    button.onclick = async function(event) {
+    button.onclick = function(event) {
       event.preventDefault();
       event.stopPropagation();
       const row = rows[Number(button.dataset.row)];
-      const originalText = button.textContent;
-      button.disabled = true;
-      button.textContent = "Добавляю…";
-      try {
-        await api("/api/app/growth/projects/" + state.projectId + "/leads", {
-          method:"POST",
-          body:JSON.stringify({
-            display_name:row.title || row.username || "Telegram lead",
-            source:"radar",
-            source_url:row.url || "",
-            username:String(row.username || "").replace(/^@/, ""),
-            public_contact:(row.public_contacts || [])[0] || "",
-            intent_score:Math.max(0, Math.min(100, Number(row.total_score || 0))),
-            note:"Добавлен из TG Radar"
-          })
-        });
-        button.textContent = "В CRM ✓";
-        if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
-        state.crmAddedCount += 1;
-        const crmJump = $("crmJump");
-        const crmJumpCount = $("crmJumpCount");
-        if (crmJump && crmJumpCount) {
-          crmJumpCount.textContent = state.crmAddedCount;
-          crmJump.hidden = state.activeView !== "radar";
-        }
-        refreshOverview();
-      } catch (error) {
-        button.disabled = false;
-        button.textContent = originalText;
-        notify(error.message);
-      }
+      if (row) addRadarRowToCrm(row, button);
       return false;
     };
   });
@@ -552,12 +603,7 @@ function renderResults(rows) {
       event.preventDefault();
       event.stopPropagation();
       const row = rows[Number(button.dataset.row)];
-      if (!row || !row.url) return false;
-      if (tg && typeof tg.openTelegramLink === "function" && row.url.indexOf("https://t.me/") === 0) {
-        tg.openTelegramLink(row.url);
-      } else {
-        window.open(row.url, "_blank", "noopener");
-      }
+      openRadarRow(row);
       return false;
     };
   });
@@ -586,7 +632,7 @@ $("saveSearch").onclick = function() {
   notify("Поиск сохранён.");
 };
 
-["radarSort","radarMinScore","radarMinAudience","radarFavoritesOnly"].forEach(function(id) {
+["radarViewMode","radarSort","radarMinScore","radarMinAudience","radarFavoritesOnly"].forEach(function(id) {
   $(id).onchange = applyRadarFilters;
 });
 
