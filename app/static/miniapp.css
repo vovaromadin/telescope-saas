@@ -184,3 +184,6 @@ button:disabled{opacity:.58;cursor:wait}
   .toolbar{align-items:flex-start;flex-wrap:wrap}
   .crm-jump{width:calc(100vw - 20px);bottom:calc(10px + env(safe-area-inset-bottom))}
 }
+
+/* Advanced Radar controls are hidden until their controller is enabled. */
+.radar-controls,.saved-search-row{display:none}
