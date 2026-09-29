@@ -772,7 +772,8 @@ function renderLeadRows() {
       '<div class="meta">' + escapeHtml(row.public_contact || row.username || row.source) + '</div>' +
       '<p>' + escapeHtml(row.note || "Без заметки") + '</p>' +
       '<div class="item-actions">' + sourceButton +
-      '<button type="button" class="ghost lead-draft" data-id="' + row.id + '">Черновик обращения</button></div></div>' +
+      '<button type="button" class="ghost lead-draft" data-id="' + row.id + '">Черновик обращения</button>' +
+      '<button type="button" class="ghost danger-action lead-delete" data-id="' + row.id + '">Удалить</button></div></div>' +
       '<div class="item-side"><b>' + Math.round(row.intent_score) + '</b>' +
       statusSelect("lead", row.id, row.status, ["new","qualified","contacted","negotiation","won","lost","snoozed"]) +
       '<button type="button" class="ghost lead-next" data-id="' + row.id + '">Следующий этап</button></div></article>';
@@ -803,6 +804,20 @@ function renderLeadRows() {
           method:"PATCH",
           body:JSON.stringify({status:next})
         });
+        await Promise.all([refreshLeads(), refreshOverview()]);
+      } catch (error) {
+        notify(error.message);
+        button.disabled = false;
+      }
+    };
+  });
+
+  document.querySelectorAll(".lead-delete").forEach(function(button) {
+    button.onclick = async function() {
+      if (!window.confirm("Удалить этот лид из CRM?")) return;
+      button.disabled = true;
+      try {
+        await api("/api/app/growth/leads/" + button.dataset.id, {method:"DELETE"});
         await Promise.all([refreshLeads(), refreshOverview()]);
       } catch (error) {
         notify(error.message);
@@ -888,10 +903,24 @@ async function refreshContent() {
       ? ' · ' + new Date(row.scheduled_at).toLocaleString("ru-RU", {day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})
       : '';
     return '<article class="item-card"><div><div class="item-title">' + escapeHtml(row.title) + '</div>' +
-      '<div class="meta">' + escapeHtml(row.format) + scheduled + '</div><p>' + escapeHtml(row.body || "Пустой черновик") + '</p></div>' +
+      '<div class="meta">' + escapeHtml(row.format) + scheduled + '</div><p>' + escapeHtml(row.body || "Пустой черновик") + '</p>' +
+      '<div class="item-actions"><button type="button" class="ghost danger-action content-delete" data-id="' + row.id + '">Удалить</button></div></div>' +
       '<div class="item-side">' + statusSelect("content", row.id, row.status, ["draft","review","scheduled","published"]) + '</div></article>';
   }).join("") : '<div class="empty">Контент-план пуст.</div>';
   bindStatusSelects();
+  document.querySelectorAll(".content-delete").forEach(function(button) {
+    button.onclick = async function() {
+      if (!window.confirm("Удалить этот материал?")) return;
+      button.disabled = true;
+      try {
+        await api("/api/app/growth/content/" + button.dataset.id, {method:"DELETE"});
+        await Promise.all([refreshContent(), refreshOverview()]);
+      } catch (error) {
+        notify(error.message);
+        button.disabled = false;
+      }
+    };
+  });
 }
 
 $("contentPreview").onclick = function() {
@@ -927,10 +956,24 @@ async function refreshCampaigns() {
   $("campaignList").innerHTML = rows.length ? rows.map(function(row) {
     return '<article class="item-card"><div><div class="item-title">' + escapeHtml(row.name) + '</div>' +
       '<div class="meta">' + escapeHtml(row.channel) + (row.budget_daily ? " · " + row.budget_daily + "/день" : "") + '</div>' +
-      '<p>' + escapeHtml(row.goal || "Цель не указана") + '</p></div>' +
+      '<p>' + escapeHtml(row.goal || "Цель не указана") + '</p>' +
+      '<div class="item-actions"><button type="button" class="ghost danger-action campaign-delete" data-id="' + row.id + '">Удалить</button></div></div>' +
       '<div class="item-side">' + statusSelect("campaign", row.id, row.status, ["draft","active","paused","completed"]) + '</div></article>';
   }).join("") : '<div class="empty">Кампаний пока нет.</div>';
   bindStatusSelects();
+  document.querySelectorAll(".campaign-delete").forEach(function(button) {
+    button.onclick = async function() {
+      if (!window.confirm("Удалить эту кампанию?")) return;
+      button.disabled = true;
+      try {
+        await api("/api/app/growth/campaigns/" + button.dataset.id, {method:"DELETE"});
+        await Promise.all([refreshCampaigns(), refreshOverview()]);
+      } catch (error) {
+        notify(error.message);
+        button.disabled = false;
+      }
+    };
+  });
 }
 
 $("campaignForm").onsubmit = async function(event) {
