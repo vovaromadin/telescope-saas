@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import re
 from urllib.parse import quote_plus
 
@@ -152,15 +153,20 @@ class SearchTMeDiscovery:
         rows: dict[str, WebCommunity] = {}
 
         async def collect(client: httpx.AsyncClient, source_urls: list[str], require_match: bool) -> None:
-            for url in source_urls:
+            async def fetch(url: str) -> str:
                 try:
                     response = await client.get(url)
-                    if response.status_code != 200 or not response.text:
-                        continue
+                    if response.status_code == 200:
+                        return response.text or ""
                 except Exception:
-                    continue
+                    pass
+                return ""
 
-                soup = BeautifulSoup(response.text, "html.parser")
+            pages = await asyncio.gather(*(fetch(url) for url in source_urls))
+            for html in pages:
+                if not html:
+                    continue
+                soup = BeautifulSoup(html, "html.parser")
                 for anchor in soup.find_all("a", href=True):
                     row = parse_card(anchor, query)
                     if row is None:
