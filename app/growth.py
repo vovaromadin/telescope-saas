@@ -67,6 +67,7 @@ class ContentCreate(BaseModel):
     title: str = Field(min_length=1, max_length=220)
     body: str = Field(default="", max_length=20000)
     format: str = Field(default="post", max_length=40)
+    scheduled_at: Optional[datetime] = None
 
 
 class ContentPatch(BaseModel):
@@ -305,7 +306,12 @@ def create_content(
     db: Session = Depends(get_db),
 ) -> dict:
     owned_project(db, account, project_id)
-    row = ContentItem(project_id=project_id, **payload.model_dump())
+    values = payload.model_dump()
+    row = ContentItem(
+        project_id=project_id,
+        **values,
+        status=ContentStatus.scheduled if values.get("scheduled_at") else ContentStatus.draft,
+    )
     db.add(row)
     db.commit()
     db.refresh(row)
