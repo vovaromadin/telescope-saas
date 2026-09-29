@@ -1,6 +1,7 @@
 const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
 const state = {
   initData: tg ? tg.initData : "",
+  webKey: localStorage.getItem("tgr_web_key") || "",
   projects: [],
   projectId: null,
   lastSearchId: null,
@@ -24,8 +25,19 @@ function escapeHtml(value) {
 
 async function api(path, options) {
   options = options || {};
+  if (!state.initData && !state.webKey) {
+    const entered = window.prompt("Ключ владельца TG Ракеты");
+    if (entered) {
+      state.webKey = entered.trim();
+      localStorage.setItem("tgr_web_key", state.webKey);
+    }
+  }
+  const authHeaders = state.initData
+    ? {"X-Telegram-Init-Data":state.initData}
+    : {"X-API-Key":state.webKey};
   const headers = Object.assign(
-    {"Content-Type":"application/json","X-Telegram-Init-Data":state.initData},
+    {"Content-Type":"application/json"},
+    authHeaders,
     options.headers || {}
   );
   const response = await fetch(path, Object.assign({}, options, {headers: headers}));
