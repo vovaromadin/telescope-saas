@@ -75,4 +75,35 @@ class HybridDiscovery:
 
         rows = list(merged.values())
         rows.sort(key=lambda item: (item.total_score, item.subscribers), reverse=True)
+
+        # Enrich the strongest public candidates from their own t.me/s pages.
+        # This adds recent posting activity, average views and matched public snippets
+        # without accessing member lists or private data.
+        enrich_count = min(len(rows), min(limit, 10))
+        if enrich_count:
+            analyzer = WebDiscovery()
+            enriched_rows = await asyncio.gather(
+                *(analyzer.analyze_channel(item.username, query) for item in rows[:enrich_count]),
+                return_exceptions=True,
+            )
+            enriched_any = False
+            for base, enriched in zip(rows[:enrich_count], enriched_rows):
+                if isinstance(enriched, Exception) or enriched is None:
+                    continue
+                enriched_any = True
+                base.description = enriched.description or base.description
+                base.public_contacts = list(dict.fromkeys((base.public_contacts or []) + (enriched.public_contacts or [])))
+                base.subscribers = enriched.subscribers or base.subscribers
+                base.messages_scanned = enriched.messages_scanned
+                base.messages_30d = enriched.messages_30d
+                base.avg_views = enriched.avg_views
+                base.snippets = enriched.snippets
+                base.relevance_score = max(base.relevance_score, enriched.relevance_score)
+                base.activity_score = enriched.activity_score
+                base.audience_score = max(base.audience_score, enriched.audience_score)
+                base.total_score = max(base.total_score, enriched.total_score)
+            if enriched_any and "t.me public" not in sources:
+                sources.append("t.me public")
+            rows.sort(key=lambda item: (item.total_score, item.subscribers), reverse=True)
+
         return rows[:limit], sources
