@@ -686,7 +686,7 @@ $("crmJump").onclick = function() {
 
 function statusSelect(kind, id, value, values) {
   const labels = {
-    new:"Новый", qualified:"Интересный", contacted:"Связались", won:"Успех", lost:"Отказ", snoozed:"Отложено",
+    new:"Новый", qualified:"Интересный", contacted:"Связались", negotiation:"Переговоры", won:"Успех", lost:"Отказ", snoozed:"Отложено",
     draft:"Черновик", review:"На проверке", scheduled:"Запланирован", published:"Опубликован",
     active:"Активна", paused:"Пауза", completed:"Завершена"
   };
@@ -696,7 +696,28 @@ function statusSelect(kind, id, value, values) {
     }).join("") + '</select>';
 }
 
+function updateCrmFunnel() {
+  const rows = state.leadRows || [];
+  const count = function(status) { return rows.filter(function(row) { return row.status === status; }).length; };
+  if ($("crmStageAll")) $("crmStageAll").textContent = rows.length;
+  if ($("crmStageNew")) $("crmStageNew").textContent = count("new");
+  if ($("crmStageQualified")) $("crmStageQualified").textContent = count("qualified");
+  if ($("crmStageContacted")) $("crmStageContacted").textContent = count("contacted");
+  if ($("crmStageNegotiation")) $("crmStageNegotiation").textContent = count("negotiation");
+  if ($("crmStageWon")) $("crmStageWon").textContent = count("won");
+  document.querySelectorAll("[data-crm-stage]").forEach(function(button) {
+    button.classList.toggle("active", button.dataset.crmStage === $("leadStatusFilter").value);
+  });
+}
+
+function nextLeadStatus(status) {
+  const order = ["new","qualified","contacted","negotiation","won"];
+  const index = order.indexOf(status);
+  return index >= 0 && index < order.length - 1 ? order[index + 1] : null;
+}
+
 function renderLeadRows() {
+  updateCrmFunnel();
   const query = $("leadSearch").value.trim().toLowerCase();
   const status = $("leadStatusFilter").value;
   const rows = state.leadRows.filter(function(row) {
@@ -715,7 +736,8 @@ function renderLeadRows() {
       '<div class="item-actions">' + sourceButton +
       '<button type="button" class="ghost lead-draft" data-id="' + row.id + '">Черновик обращения</button></div></div>' +
       '<div class="item-side"><b>' + Math.round(row.intent_score) + '</b>' +
-      statusSelect("lead", row.id, row.status, ["new","qualified","contacted","won","lost","snoozed"]) + '</div></article>';
+      statusSelect("lead", row.id, row.status, ["new","qualified","contacted","negotiation","won","lost","snoozed"]) +
+      '<button type="button" class="ghost lead-next" data-id="' + row.id + '">Следующий этап</button></div></article>';
   }).join("") : '<div class="empty">По выбранным фильтрам лидов нет.</div>';
 
   bindStatusSelects();
@@ -726,6 +748,28 @@ function renderLeadRows() {
       if (!row || !row.source_url) return;
       if (tg && typeof tg.openTelegramLink === "function" && row.source_url.indexOf("https://t.me/") === 0) tg.openTelegramLink(row.source_url);
       else window.open(row.source_url, "_blank", "noopener");
+    };
+  });
+
+  document.querySelectorAll(".lead-next").forEach(function(button) {
+    const row = state.leadRows.find(function(item) { return item.id === Number(button.dataset.id); });
+    const next = row ? nextLeadStatus(row.status) : null;
+    if (!next) {
+      button.hidden = true;
+      return;
+    }
+    button.onclick = async function() {
+      button.disabled = true;
+      try {
+        await api("/api/app/growth/leads/" + button.dataset.id, {
+          method:"PATCH",
+          body:JSON.stringify({status:next})
+        });
+        await Promise.all([refreshLeads(), refreshOverview()]);
+      } catch (error) {
+        notify(error.message);
+        button.disabled = false;
+      }
     };
   });
 
@@ -764,11 +808,22 @@ function renderLeadRows() {
 
 async function refreshLeads() {
   state.leadRows = await api("/api/app/growth/projects/" + state.projectId + "/leads");
+  updateCrmFunnel();
   renderLeadRows();
 }
 
 $("leadSearch").oninput = renderLeadRows;
-$("leadStatusFilter").onchange = renderLeadRows;
+$("leadStatusFilter").onchange = function() {
+  updateCrmFunnel();
+  renderLeadRows();
+};
+document.querySelectorAll("[data-crm-stage]").forEach(function(button) {
+  button.onclick = function() {
+    $("leadStatusFilter").value = button.dataset.crmStage || "";
+    updateCrmFunnel();
+    renderLeadRows();
+  };
+});
 
 $("leadForm").onsubmit = async function(event) {
   event.preventDefault();
