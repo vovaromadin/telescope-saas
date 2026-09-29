@@ -110,6 +110,24 @@ def mini_app() -> HTMLResponse:
         )
 
 
+@app.get("/web", response_class=HTMLResponse)
+def web_app() -> HTMLResponse:
+    """Full browser version of TG Raketa using the same UI and growth APIs."""
+    with open("app/static/miniapp.html", encoding="utf-8") as handle:
+        html = handle.read().replace(
+            "<title>TG Ракета</title>",
+            "<title>TG Ракета — Web</title>",
+        )
+        return HTMLResponse(
+            html,
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
+
+
 @app.get("/health/radar")
 async def radar_health() -> dict:
     query = "ставки футбол"
