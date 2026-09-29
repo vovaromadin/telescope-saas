@@ -343,6 +343,18 @@ class WebDiscovery:
             snippets=snippets,
         )
 
+    async def analyze_channel(self, username: str, query: str = "") -> WebCommunity | None:
+        username = normalize_username(username)
+        if not username:
+            return None
+        limits = httpx.Limits(max_connections=4, max_keepalive_connections=2)
+        async with httpx.AsyncClient(
+            headers=self.headers,
+            follow_redirects=True,
+            limits=limits,
+        ) as client:
+            return await self._analyze(client, username, query)
+
     async def search(self, query: str, limit: int) -> list[WebCommunity]:
         limit = max(1, min(limit, 100))
         candidate_cap = max(30, min(180, limit * 4))
