@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light dark">
   <title>TG Ракета</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/static/miniapp.css?v=growth-os-6">
+  <link rel="stylesheet" href="/static/miniapp.css?v=growth-os-7">
 </head>
 <body>
   <main class="shell">
@@ -159,6 +159,18 @@
           <textarea id="leadNote" maxlength="5000" rows="2" placeholder="Заметка"></textarea>
           <button type="submit">Добавить лид</button>
         </form>
+        <div class="crm-tools">
+          <input id="leadSearch" type="search" placeholder="Поиск по CRM">
+          <select id="leadStatusFilter">
+            <option value="">Все статусы</option>
+            <option value="new">Новые</option>
+            <option value="qualified">Интересные</option>
+            <option value="contacted">Связались</option>
+            <option value="won">Успех</option>
+            <option value="lost">Отказ</option>
+            <option value="snoozed">Отложено</option>
+          </select>
+        </div>
       </section>
       <section id="leadList" class="list"></section>
     </section>
@@ -208,8 +220,22 @@
       <section id="campaignList" class="list"></section>
     </section>
 
+    <section id="infoSheet" class="info-sheet" hidden>
+      <div class="info-sheet-backdrop" data-close-sheet></div>
+      <article class="info-sheet-card">
+        <div class="section-head">
+          <div>
+            <div class="eyebrow" id="infoSheetEyebrow">TG Ракета</div>
+            <h2 id="infoSheetTitle">Разбор</h2>
+          </div>
+          <button id="infoSheetClose" type="button" class="ghost sheet-close">Закрыть</button>
+        </div>
+        <div id="infoSheetBody" class="info-sheet-body"></div>
+      </article>
+    </section>
+
     <footer>Публичные сообщества, авторизованные аккаунты и согласованные коммуникации. Без массовых незапрошенных ЛС.</footer>
   </main>
-  <script src="/static/miniapp.js?v=growth-os-6"></script>
+  <script src="/static/miniapp.js?v=growth-os-7"></script>
 </body>
 </html>
