@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light dark">
   <title>TG Ракета</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/static/miniapp.css?v=growth-os-8">
+  <link rel="stylesheet" href="/static/miniapp.css?v=growth-os-9">
 </head>
 <body>
   <main class="shell">
@@ -160,6 +160,14 @@
           <textarea id="leadNote" maxlength="5000" rows="2" placeholder="Заметка"></textarea>
           <button type="submit">Добавить лид</button>
         </form>
+        <div id="crmFunnel" class="crm-funnel" aria-label="Воронка CRM">
+          <button type="button" data-crm-stage=""><span>Все</span><b id="crmStageAll">0</b></button>
+          <button type="button" data-crm-stage="new"><span>Новые</span><b id="crmStageNew">0</b></button>
+          <button type="button" data-crm-stage="qualified"><span>Интересные</span><b id="crmStageQualified">0</b></button>
+          <button type="button" data-crm-stage="contacted"><span>Связались</span><b id="crmStageContacted">0</b></button>
+          <button type="button" data-crm-stage="negotiation"><span>Переговоры</span><b id="crmStageNegotiation">0</b></button>
+          <button type="button" data-crm-stage="won"><span>Успех</span><b id="crmStageWon">0</b></button>
+        </div>
         <div class="crm-tools">
           <input id="leadSearch" type="search" placeholder="Поиск по CRM">
           <select id="leadStatusFilter">
@@ -167,6 +175,7 @@
             <option value="new">Новые</option>
             <option value="qualified">Интересные</option>
             <option value="contacted">Связались</option>
+            <option value="negotiation">Переговоры</option>
             <option value="won">Успех</option>
             <option value="lost">Отказ</option>
             <option value="snoozed">Отложено</option>
@@ -237,6 +246,6 @@
 
     <footer>Публичные сообщества, авторизованные аккаунты и согласованные коммуникации. Без массовых незапрошенных ЛС.</footer>
   </main>
-  <script src="/static/miniapp.js?v=growth-os-8"></script>
+  <script src="/static/miniapp.js?v=growth-os-9"></script>
 </body>
 </html>
