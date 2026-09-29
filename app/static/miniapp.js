@@ -8,7 +8,9 @@ const state = {
   activeView: "overview",
   telegramConnected: false,
   telegramPoll: null,
-  crmAddedCount: 0
+  crmAddedCount: 0,
+  lastRows: [],
+  leadRows: []
 };
 const $ = (id) => document.getElementById(id);
 
@@ -23,6 +25,96 @@ function escapeHtml(value) {
   });
 }
 
+function buildAuthHeaders() {
+  return state.initData
+    ? {"X-Telegram-Init-Data":state.initData}
+    : state.webKey
+      ? {"X-API-Key":state.webKey}
+      : {};
+}
+
+function storageKey(name) {
+  return "tgr_" + name + "_" + String(state.projectId || "none");
+}
+
+function loadStoredArray(name) {
+  try {
+    const value = JSON.parse(localStorage.getItem(storageKey(name)) || "[]");
+    return Array.isArray(value) ? value : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function saveStoredArray(name, value) {
+  localStorage.setItem(storageKey(name), JSON.stringify(value));
+}
+
+function radarRowKey(row) {
+  return String(row.username || row.url || row.title || "").trim().toLowerCase();
+}
+
+function isFavorite(row) {
+  return new Set(loadStoredArray("favorites")).has(radarRowKey(row));
+}
+
+function toggleFavorite(row) {
+  const key = radarRowKey(row);
+  const favorites = new Set(loadStoredArray("favorites"));
+  if (favorites.has(key)) favorites.delete(key);
+  else favorites.add(key);
+  saveStoredArray("favorites", Array.from(favorites));
+}
+
+function renderSavedSearches() {
+  const box = $("savedSearches");
+  if (!box) return;
+  const rows = loadStoredArray("saved_searches");
+  box.innerHTML = rows.length
+    ? rows.map(function(query, index) {
+        return '<span class="saved-search-chip"><button type="button" class="saved-query" data-index="' + index + '">' +
+          escapeHtml(query) + '</button><button type="button" class="saved-remove" data-index="' + index + '" aria-label="Удалить">×</button></span>';
+      }).join("")
+    : '<span class="meta">Сохранённых запросов пока нет</span>';
+
+  box.querySelectorAll(".saved-query").forEach(function(button) {
+    button.onclick = function() {
+      const query = loadStoredArray("saved_searches")[Number(button.dataset.index)] || "";
+      if (!query) return;
+      $("query").value = query;
+      $("searchForm").requestSubmit();
+    };
+  });
+  box.querySelectorAll(".saved-remove").forEach(function(button) {
+    button.onclick = function() {
+      const rows = loadStoredArray("saved_searches");
+      rows.splice(Number(button.dataset.index), 1);
+      saveStoredArray("saved_searches", rows);
+      renderSavedSearches();
+    };
+  });
+}
+
+function openInfoSheet(title, bodyHtml, eyebrow) {
+  $("infoSheetTitle").textContent = title || "Разбор";
+  $("infoSheetEyebrow").textContent = eyebrow || "TG Ракета";
+  $("infoSheetBody").innerHTML = bodyHtml || "";
+  $("infoSheet").hidden = false;
+  document.body.classList.add("sheet-open");
+}
+
+function closeInfoSheet() {
+  $("infoSheet").hidden = true;
+  $("infoSheetBody").innerHTML = "";
+  document.body.classList.remove("sheet-open");
+}
+
+$("infoSheetClose").onclick = closeInfoSheet;
+document.querySelectorAll("[data-close-sheet]").forEach(function(node) {
+  node.onclick = closeInfoSheet;
+});
+
+
 async function api(path, options) {
   options = options || {};
   if (!state.initData && !state.webKey) {
@@ -32,9 +124,7 @@ async function api(path, options) {
       localStorage.setItem("tgr_web_key", state.webKey);
     }
   }
-  const authHeaders = state.initData
-    ? {"X-Telegram-Init-Data":state.initData}
-    : {"X-API-Key":state.webKey};
+  const authHeaders = buildAuthHeaders();
   const headers = Object.assign(
     {"Content-Type":"application/json"},
     authHeaders,
@@ -111,7 +201,12 @@ function renderProjects() {
     item.innerHTML = "<b>" + escapeHtml(p.name) + "</b><small>#" + p.id + "</small>";
     item.onclick = async function() {
       state.projectId = p.id;
+      state.lastRows = [];
+      state.crmAddedCount = 0;
+      $("results").innerHTML = "";
+      $("toolbar").hidden = true;
       renderProjects();
+      renderSavedSearches();
       await refreshCurrentView();
     };
     box.appendChild(item);
@@ -125,6 +220,7 @@ function renderProjects() {
 async function refreshProjects() {
   state.projects = await api("/api/app/projects");
   renderProjects();
+  renderSavedSearches();
 }
 
 function setView(name) {
@@ -304,6 +400,37 @@ async function refreshOverview() {
   $("kpiWon").textContent = data.leads_won;
 }
 
+function filteredRadarRows() {
+  let rows = state.lastRows.slice();
+  const minScore = Number($("radarMinScore").value || 0);
+  const minAudience = Number($("radarMinAudience").value || 0);
+  const favoritesOnly = Boolean($("radarFavoritesOnly").checked);
+  const favorites = new Set(loadStoredArray("favorites"));
+
+  rows = rows.filter(function(row) {
+    if (Number(row.total_score || 0) < minScore) return false;
+    if (Number(row.subscribers || 0) < minAudience) return false;
+    if (favoritesOnly && !favorites.has(radarRowKey(row))) return false;
+    return true;
+  });
+
+  const sort = $("radarSort").value;
+  const field = sort === "activity" ? "activity_score" : sort === "audience" ? "subscribers" : sort === "views" ? "avg_views" : "total_score";
+  rows.sort(function(a, b) { return Number(b[field] || 0) - Number(a[field] || 0); });
+  return rows;
+}
+
+function applyRadarFilters() {
+  const rows = filteredRadarRows();
+  renderResults(rows);
+  if (state.lastRows.length) {
+    $("count").textContent = rows.length === state.lastRows.length
+      ? "Найдено: " + rows.length
+      : "Показано: " + rows.length + " из " + state.lastRows.length;
+    $("toolbar").hidden = false;
+  }
+}
+
 function renderResults(rows) {
   $("results").innerHTML = rows.map(function(r, index) {
     const contacts = (r.public_contacts || []).map(function(c) {
@@ -312,19 +439,73 @@ function renderResults(rows) {
     const links =
       (r.referral_url ? '<a href="' + r.referral_url + '" target="_blank">ref link</a>' : "") +
       (r.max_referral_url ? '<a href="' + r.max_referral_url + '" target="_blank">MAX link</a>' : "");
+    const favorite = isFavorite(r);
+    const extraStats =
+      (Number(r.messages_30d || 0) > 0 ? '<span class="chip">' + Number(r.messages_30d) + ' постов/30д</span>' : '') +
+      (Number(r.avg_views || 0) > 0 ? '<span class="chip">' + Math.round(Number(r.avg_views)).toLocaleString("ru-RU") + ' ср. просмотров</span>' : '');
     return '<article class="result"><div>' +
-      '<h3>' + escapeHtml(r.title) + '</h3>' +
+      '<div class="result-title-row"><h3>' + escapeHtml(r.title) + '</h3>' +
+      '<button type="button" class="favorite-toggle' + (favorite ? ' active' : '') + '" data-row="' + index + '" aria-label="Избранное">★</button></div>' +
       '<div class="meta">' + escapeHtml(r.username) + ' · ' + escapeHtml(r.kind) + '</div>' +
       '<p class="desc">' + escapeHtml(r.description || "Описание не указано") + '</p>' +
       '<div class="chips"><span class="chip">' + Number(r.subscribers || 0).toLocaleString("ru-RU") + ' участников</span>' +
-      '<span class="chip">релевантность ' + r.relevance_score + '</span>' +
-      '<span class="chip">активность ' + r.activity_score + '</span>' + contacts + '</div>' +
+      '<span class="chip">релевантность ' + Math.round(Number(r.relevance_score || 0)) + '</span>' +
+      '<span class="chip">активность ' + Math.round(Number(r.activity_score || 0)) + '</span>' + extraStats + contacts + '</div>' +
       '<div class="result-actions">' +
       '<button type="button" class="ghost lead-add" data-row="' + index + '">+ CRM</button>' +
+      '<button type="button" class="ghost analyze-channel" data-row="' + index + '">Разбор канала</button>' +
       '<button type="button" class="ghost channel-open" data-row="' + index + '">Открыть канал</button>' +
       '<div class="links">' + links + '</div></div></div>' +
       '<div class="score">' + Math.round(r.total_score || 0) + '</div></article>';
   }).join("");
+
+  document.querySelectorAll(".favorite-toggle").forEach(function(button) {
+    button.onclick = function(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      const row = rows[Number(button.dataset.row)];
+      toggleFavorite(row);
+      applyRadarFilters();
+    };
+  });
+
+  document.querySelectorAll(".analyze-channel").forEach(function(button) {
+    button.onclick = async function(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      const row = rows[Number(button.dataset.row)];
+      const oldText = button.textContent;
+      button.disabled = true;
+      button.textContent = "Анализирую…";
+      try {
+        const data = await api(
+          "/api/app/radar/analyze?username=" + encodeURIComponent(String(row.username || "").replace(/^@/, "")) +
+          "&query=" + encodeURIComponent($("query").value.trim())
+        );
+        const snippets = (data.snippets || []).length
+          ? '<div class="analysis-section"><b>Свежие совпадения</b><ul>' + data.snippets.map(function(item) {
+              return '<li>' + escapeHtml(item) + '</li>';
+            }).join("") + '</ul></div>'
+          : '';
+        const body =
+          '<div class="analysis-kpis">' +
+            '<div><span>Аудитория</span><b>' + Number(data.subscribers || 0).toLocaleString("ru-RU") + '</b></div>' +
+            '<div><span>Постов / 30д</span><b>' + Number(data.messages_30d || 0) + '</b></div>' +
+            '<div><span>Ср. просмотры</span><b>' + Math.round(Number(data.avg_views || 0)).toLocaleString("ru-RU") + '</b></div>' +
+            '<div><span>ER ~</span><b>' + Number(data.estimated_er || 0).toFixed(1) + '%</b></div>' +
+          '</div>' +
+          '<div class="analysis-section"><b>Почему подходит</b><p>' + escapeHtml(data.why || "") + '</p></div>' +
+          '<div class="analysis-section"><b>Рекомендация</b><p>' + escapeHtml(data.recommendation || "") + '</p></div>' +
+          snippets;
+        openInfoSheet(data.title || row.title, body, "РАЗБОР КАНАЛА");
+      } catch (error) {
+        notify(error.message);
+      } finally {
+        button.disabled = false;
+        button.textContent = oldText;
+      }
+    };
+  });
 
   document.querySelectorAll(".lead-add").forEach(function(button) {
     button.onclick = async function(event) {
@@ -390,11 +571,24 @@ async function pollSearch(searchId) {
   }
   if (run.status === "failed") throw new Error(run.error || "Поиск завершился ошибкой");
   const rows = await api("/api/app/searches/" + searchId + "/results");
-  renderResults(rows);
-  $("count").textContent = "Найдено: " + rows.length;
-  $("toolbar").hidden = false;
+  state.lastRows = rows;
+  applyRadarFilters();
   notify(run.error || "Поиск завершён");
 }
+
+$("saveSearch").onclick = function() {
+  const query = $("query").value.trim();
+  if (!query || !state.projectId) return;
+  const rows = loadStoredArray("saved_searches").filter(function(item) { return item !== query; });
+  rows.unshift(query);
+  saveStoredArray("saved_searches", rows.slice(0, 12));
+  renderSavedSearches();
+  notify("Поиск сохранён.");
+};
+
+["radarSort","radarMinScore","radarMinAudience","radarFavoritesOnly"].forEach(function(id) {
+  $(id).onchange = applyRadarFilters;
+});
 
 $("searchForm").onsubmit = async function(event) {
   event.preventDefault();
@@ -425,7 +619,7 @@ $("searchForm").onsubmit = async function(event) {
 async function download(format) {
   if (!state.lastSearchId) return;
   const response = await fetch("/api/app/searches/" + state.lastSearchId + "/export." + format, {
-    headers:{"X-Telegram-Init-Data":state.initData}
+    headers:buildAuthHeaders()
   });
   if (!response.ok) return;
   const blob = await response.blob();
@@ -445,23 +639,90 @@ $("crmJump").onclick = function() {
 };
 
 function statusSelect(kind, id, value, values) {
+  const labels = {
+    new:"Новый", qualified:"Интересный", contacted:"Связались", won:"Успех", lost:"Отказ", snoozed:"Отложено",
+    draft:"Черновик", review:"На проверке", scheduled:"Запланирован", published:"Опубликован",
+    active:"Активна", paused:"Пауза", completed:"Завершена"
+  };
   return '<select class="status-select" data-kind="' + kind + '" data-id="' + id + '">' +
     values.map(function(item) {
-      return '<option value="' + item + '"' + (item === value ? " selected" : "") + '>' + item + '</option>';
+      return '<option value="' + item + '"' + (item === value ? " selected" : "") + '>' + (labels[item] || item) + '</option>';
     }).join("") + '</select>';
 }
 
-async function refreshLeads() {
-  const rows = await api("/api/app/growth/projects/" + state.projectId + "/leads");
+function renderLeadRows() {
+  const query = $("leadSearch").value.trim().toLowerCase();
+  const status = $("leadStatusFilter").value;
+  const rows = state.leadRows.filter(function(row) {
+    if (status && row.status !== status) return false;
+    if (!query) return true;
+    return [row.display_name,row.username,row.public_contact,row.note,row.source].join(" ").toLowerCase().includes(query);
+  });
+
   $("leadList").innerHTML = rows.length ? rows.map(function(row) {
+    const sourceButton = row.source_url
+      ? '<button type="button" class="ghost lead-source" data-id="' + row.id + '">Источник</button>'
+      : '';
     return '<article class="item-card"><div><div class="item-title">' + escapeHtml(row.display_name) + '</div>' +
       '<div class="meta">' + escapeHtml(row.public_contact || row.username || row.source) + '</div>' +
-      '<p>' + escapeHtml(row.note || "Без заметки") + '</p></div>' +
+      '<p>' + escapeHtml(row.note || "Без заметки") + '</p>' +
+      '<div class="item-actions">' + sourceButton +
+      '<button type="button" class="ghost lead-draft" data-id="' + row.id + '">Черновик обращения</button></div></div>' +
       '<div class="item-side"><b>' + Math.round(row.intent_score) + '</b>' +
       statusSelect("lead", row.id, row.status, ["new","qualified","contacted","won","lost","snoozed"]) + '</div></article>';
-  }).join("") : '<div class="empty">Лидов пока нет. Добавь вручную или перенеси результат из Radar.</div>';
+  }).join("") : '<div class="empty">По выбранным фильтрам лидов нет.</div>';
+
   bindStatusSelects();
+
+  document.querySelectorAll(".lead-source").forEach(function(button) {
+    button.onclick = function() {
+      const row = state.leadRows.find(function(item) { return item.id === Number(button.dataset.id); });
+      if (!row || !row.source_url) return;
+      if (tg && typeof tg.openTelegramLink === "function" && row.source_url.indexOf("https://t.me/") === 0) tg.openTelegramLink(row.source_url);
+      else window.open(row.source_url, "_blank", "noopener");
+    };
+  });
+
+  document.querySelectorAll(".lead-draft").forEach(function(button) {
+    button.onclick = async function() {
+      const oldText = button.textContent;
+      button.disabled = true;
+      button.textContent = "Готовлю…";
+      try {
+        const data = await api("/api/app/growth/leads/" + button.dataset.id + "/draft");
+        const body =
+          '<div class="analysis-section"><b>' + escapeHtml(data.subject || "Черновик") + '</b>' +
+          '<textarea id="draftText" class="draft-text" readonly>' + escapeHtml(data.text || "") + '</textarea>' +
+          '<button id="copyDraft" type="button">Копировать текст</button>' +
+          '<p class="meta">' + escapeHtml(data.note || "") + '</p></div>';
+        openInfoSheet("Черновик обращения", body, "CRM");
+        $("copyDraft").onclick = async function() {
+          try {
+            await navigator.clipboard.writeText($("draftText").value);
+            $("copyDraft").textContent = "Скопировано ✓";
+          } catch (_) {
+            $("draftText").select();
+            document.execCommand("copy");
+            $("copyDraft").textContent = "Скопировано ✓";
+          }
+        };
+      } catch (error) {
+        notify(error.message);
+      } finally {
+        button.disabled = false;
+        button.textContent = oldText;
+      }
+    };
+  });
 }
+
+async function refreshLeads() {
+  state.leadRows = await api("/api/app/growth/projects/" + state.projectId + "/leads");
+  renderLeadRows();
+}
+
+$("leadSearch").oninput = renderLeadRows;
+$("leadStatusFilter").onchange = renderLeadRows;
 
 $("leadForm").onsubmit = async function(event) {
   event.preventDefault();
@@ -560,17 +821,16 @@ document.querySelectorAll("[data-plan]").forEach(function(button) {
 });
 
 async function boot() {
-  if (!state.initData) {
-    $("authError").hidden = false;
-    $("authError").textContent = "Открой TG Ракета из Telegram-бота — браузерная версия не получает Telegram-авторизацию.";
-    return;
-  }
   try {
     await Promise.all([refreshMe(), refreshProjects(), refreshTelegramConnection(), refreshRadarSources()]);
+    $("authError").hidden = true;
+    renderSavedSearches();
     if (state.projectId) await refreshOverview();
   } catch (error) {
     $("authError").hidden = false;
-    $("authError").textContent = error.message;
+    $("authError").textContent = !state.initData
+      ? "Web-доступ владельца: " + error.message + ". Обнови страницу и введи корректный ключ."
+      : error.message;
   }
 }
 
