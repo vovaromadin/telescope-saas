@@ -228,7 +228,11 @@ function setView(name) {
   document.querySelectorAll("[data-view]").forEach(function(section) {
     section.hidden = section.dataset.view !== name;
   });
-  document.querySelectorAll("[data-view-button]").forEach(function(button) {
+  document.querySelectorAll("[data-go-view]").forEach(function(button) {
+  button.onclick = function() { setView(button.dataset.goView); };
+});
+
+document.querySelectorAll("[data-view-button]").forEach(function(button) {
     const active = button.dataset.viewButton === name;
     button.classList.toggle("active", active);
     if (active) button.scrollIntoView({behavior:"smooth", block:"nearest", inline:"center"});
@@ -387,6 +391,10 @@ $("tgDisconnect").onclick = async function() {
   }
 };
 
+$("nextActionButton").onclick = function() {
+  setView(this.dataset.goTarget || "radar");
+};
+
 async function refreshOverview() {
   const data = await api("/api/app/growth/projects/" + state.projectId + "/overview");
   $("kpiLeads").textContent = data.leads_total;
@@ -398,6 +406,36 @@ async function refreshOverview() {
   $("kpiCommunities").textContent = data.communities_discovered;
   $("kpiSearches").textContent = data.searches + " поисков";
   $("kpiWon").textContent = data.leads_won;
+
+  let nextView = "radar";
+  let title = "Найди первые подходящие площадки";
+  let text = "Запусти Radar и собери каналы или сигналы спроса для этого проекта.";
+
+  if (data.communities_discovered > 0 && data.leads_total === 0) {
+    nextView = "radar";
+    title = "Собери shortlist и перенеси лучшие варианты в CRM";
+    text = "Radar уже нашёл площадки. Отметь ★ избранное и добавь несколько вариантов в CRM.";
+  } else if (data.leads_new > 0 || data.leads_qualified > 0) {
+    nextView = "leads";
+    title = "Разбери новые лиды";
+    text = "В CRM есть необработанные варианты. Проверь источники, подготовь черновики и двигай их по воронке.";
+  } else if (data.leads_contacted > 0 || data.leads_negotiation > 0) {
+    nextView = "leads";
+    title = "Продолжи переговоры";
+    text = "Есть лиды в работе. Обнови статусы и зафиксируй результат контакта.";
+  } else if (data.leads_total > 0 && data.content_draft === 0 && data.content_scheduled === 0) {
+    nextView = "content";
+    title = "Подготовь контент под выбранные площадки";
+    text = "Лиды уже собраны — пора сделать пост, оффер или сценарий для размещения.";
+  } else if ((data.content_draft > 0 || data.content_scheduled > 0) && data.campaigns_active === 0) {
+    nextView = "campaigns";
+    title = "Собери кампанию";
+    text = "Контент готов. Зафиксируй цель, бюджет и канал продвижения в кампании.";
+  }
+
+  $("nextActionTitle").textContent = title;
+  $("nextActionText").textContent = text;
+  $("nextActionButton").dataset.goTarget = nextView;
 }
 
 function filteredRadarRows() {
@@ -846,12 +884,28 @@ $("leadForm").onsubmit = async function(event) {
 async function refreshContent() {
   const rows = await api("/api/app/growth/projects/" + state.projectId + "/content");
   $("contentList").innerHTML = rows.length ? rows.map(function(row) {
+    const scheduled = row.scheduled_at
+      ? ' · ' + new Date(row.scheduled_at).toLocaleString("ru-RU", {day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})
+      : '';
     return '<article class="item-card"><div><div class="item-title">' + escapeHtml(row.title) + '</div>' +
-      '<div class="meta">' + escapeHtml(row.format) + '</div><p>' + escapeHtml(row.body || "Пустой черновик") + '</p></div>' +
+      '<div class="meta">' + escapeHtml(row.format) + scheduled + '</div><p>' + escapeHtml(row.body || "Пустой черновик") + '</p></div>' +
       '<div class="item-side">' + statusSelect("content", row.id, row.status, ["draft","review","scheduled","published"]) + '</div></article>';
   }).join("") : '<div class="empty">Контент-план пуст.</div>';
   bindStatusSelects();
 }
+
+$("contentPreview").onclick = function() {
+  const title = $("contentTitle").value.trim() || "Без заголовка";
+  const body = $("contentBody").value.trim() || "Текст пока не заполнен.";
+  const schedule = $("contentSchedule").value
+    ? '<div class="meta">Запланировано: ' + escapeHtml(new Date($("contentSchedule").value).toLocaleString("ru-RU")) + '</div>'
+    : '<div class="meta">Черновик без даты публикации</div>';
+  openInfoSheet(
+    "Предпросмотр Telegram-поста",
+    '<article class="telegram-preview"><b>' + escapeHtml(title) + '</b><p>' + escapeHtml(body).replace(/\n/g,"<br>") + '</p>' + schedule + '</article>',
+    "КОНТЕНТ"
+  );
+};
 
 $("contentForm").onsubmit = async function(event) {
   event.preventDefault();
@@ -860,7 +914,8 @@ $("contentForm").onsubmit = async function(event) {
     body:JSON.stringify({
       title:$("contentTitle").value.trim(),
       body:$("contentBody").value.trim(),
-      format:$("contentFormat").value
+      format:$("contentFormat").value,
+      scheduled_at:$("contentSchedule").value ? new Date($("contentSchedule").value).toISOString() : null
     })
   });
   event.target.reset();
