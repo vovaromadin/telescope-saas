@@ -238,6 +238,31 @@ def create_lead(
     return _lead(row)
 
 
+@router.get("/leads/{lead_id}/draft")
+def lead_draft(
+    lead_id: int,
+    account: Account = Depends(current_account),
+    db: Session = Depends(get_db),
+) -> dict:
+    row = _owned_row(db, account, Lead, lead_id)
+    project = db.get(Project, row.project_id)
+    project_name = project.name if project else "наш проект"
+    channel_name = row.display_name or (f"@{row.username}" if row.username else "ваш канал")
+    contact = row.public_contact or (f"@{row.username}" if row.username else "")
+    text = (
+        f"Здравствуйте! Нашёл {channel_name} и хотел обсудить возможное сотрудничество с проектом «{project_name}». "
+        "По тематике аудитория выглядит релевантной. Подскажите, пожалуйста, актуальны ли сейчас рекламные размещения "
+        "или партнёрские интеграции и какие у вас условия? Если удобно, пришлите медиакит или актуальную статистику охватов."
+    )
+    return {
+        "lead_id": row.id,
+        "contact": contact,
+        "subject": f"Сотрудничество — {project_name}",
+        "text": text,
+        "note": "Черновик подготовлен автоматически. Перед отправкой проверь условия и персонализируй текст.",
+    }
+
+
 @router.patch("/leads/{lead_id}")
 def patch_lead(
     lead_id: int,
