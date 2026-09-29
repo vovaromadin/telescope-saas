@@ -4,6 +4,7 @@ import asyncio
 import base64
 import csv
 import hashlib
+import hmac
 import io
 import json
 
@@ -95,8 +96,17 @@ def ensure_limit(db: Session, account: Account) -> None:
 
 def current_account(
     x_telegram_init_data: str = Header(default="", alias="X-Telegram-Init-Data"),
+    x_api_key: str = Header(default="", alias="X-API-Key"),
     db: Session = Depends(get_db),
 ) -> Account:
+    # Browser dashboard fallback for the owner. Telegram Mini App keeps using
+    # signed initData; the web dashboard may use the existing ADMIN_API_KEY.
+    if x_api_key and hmac.compare_digest(x_api_key, settings.admin_api_key):
+        account = db.scalar(select(Account).order_by(Account.id))
+        if not account:
+            raise HTTPException(500, "No workspace configured")
+        return account
+
     payload = validate_telegram_init_data(x_telegram_init_data, settings.tg_bot_token)
     user = payload["user"]
     telegram_id = str(user["id"])
