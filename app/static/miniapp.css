@@ -269,3 +269,6 @@ button:disabled{opacity:.58;cursor:wait}
 .telegram-preview>b{display:block;margin-bottom:8px}
 .telegram-preview p{white-space:normal;color:inherit}
 .telegram-preview .meta{margin-top:12px}
+
+.danger-action{color:#dc2626;border-color:rgba(220,38,38,.24)}
+.danger-action:hover,.danger-action:focus{background:rgba(220,38,38,.08)}
