@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from urllib.parse import quote_plus
 
 import httpx
 from bs4 import BeautifulSoup
@@ -130,21 +131,28 @@ class SearchTMeDiscovery:
     async def search(self, query: str, limit: int) -> list[WebCommunity]:
         limit = max(1, min(int(limit or 20), 50))
         category = pick_searchtme_category(query)
+        encoded_query = quote_plus(query.strip())
 
         urls: list[str] = []
+        # search-t.me's real keyword search endpoint is /catalog/all?q=...
+        # Query pages first; category pages are only a fallback if the search endpoint
+        # is temporarily unavailable or returns no parseable cards.
+        if encoded_query:
+            for host in ("https://search-t.me", "https://en.search-t.me"):
+                for page in range(1, 4):
+                    suffix = f"?q={encoded_query}" + (f"&page={page}" if page > 1 else "")
+                    urls.append(f"{host}/catalog/all{suffix}")
+
+        fallback_urls: list[str] = []
         for host in ("https://search-t.me", "https://en.search-t.me"):
-            for page in range(1, 4):
+            for page in range(1, 3):
                 suffix = "" if page == 1 else f"?page={page}"
-                urls.append(f"{host}/catalog/{category}{suffix}")
+                fallback_urls.append(f"{host}/catalog/{category}{suffix}")
 
         rows: dict[str, WebCommunity] = {}
 
-        async with httpx.AsyncClient(
-            headers=self.headers,
-            timeout=15,
-            follow_redirects=True,
-        ) as client:
-            for url in urls:
+        async def collect(client: httpx.AsyncClient, source_urls: list[str], require_match: bool) -> None:
+            for url in source_urls:
                 try:
                     response = await client.get(url)
                     if response.status_code != 200 or not response.text:
@@ -157,17 +165,28 @@ class SearchTMeDiscovery:
                     row = parse_card(anchor, query)
                     if row is None:
                         continue
+                    # Never fill a keyword search with unrelated popular catalogue rows.
+                    if require_match and query.strip() and row.relevance_score <= 0:
+                        continue
                     key = row.username.casefold()
                     existing = rows.get(key)
                     if existing is None or row.total_score > existing.total_score:
                         rows[key] = row
                     if len(rows) >= max(100, limit * 8):
-                        break
+                        return
+
+        async with httpx.AsyncClient(
+            headers=self.headers,
+            timeout=15,
+            follow_redirects=True,
+        ) as client:
+            await collect(client, urls, require_match=True)
+            if not rows:
+                await collect(client, fallback_urls, require_match=True)
 
         out = list(rows.values())
-        # Category membership is already a strong relevance signal; score breaks ties.
         out.sort(
-            key=lambda item: (item.relevance_score, item.audience_score, item.subscribers),
+            key=lambda item: (item.relevance_score, item.total_score, item.subscribers),
             reverse=True,
         )
         return out[:limit]
